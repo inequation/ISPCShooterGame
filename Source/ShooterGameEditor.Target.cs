@@ -9,6 +9,8 @@ public class ShooterGameEditorTarget : TargetRules
 	{
 		Type = TargetType.Editor;
 
+		ShooterGame.SetupISPCRules(this);
+
 		ExtraModuleNames.Add("ShooterGame");
 	}
 }

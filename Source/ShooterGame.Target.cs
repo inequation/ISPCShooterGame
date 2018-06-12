@@ -10,6 +10,8 @@ public class ShooterGameTarget : TargetRules
         Type = TargetType.Game;
         bUsesSteam = true;
 
+        ShooterGame.SetupISPCRules(this);
+
 		ExtraModuleNames.Add("ShooterGame");
 
 		if (Target.Platform == UnrealTargetPlatform.PS4)
