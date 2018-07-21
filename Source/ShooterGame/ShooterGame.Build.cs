@@ -119,7 +119,7 @@ public class ShooterGame : ModuleRules
 			Makefile.WriteLine("# Phony target for building all objects.");
 			Makefile.WriteLine("all: " + string.Join(" ", Objects));
 			_ISPCAbsoluteSources = AbsoluteSources.ToArray();
-			_ISPCObjects = Objects.ToArray();
+			_ISPCObjects = AbsoluteObjects.ToArray();
 			_ISPCHeaders = Headers.ToArray();
 		}
 
@@ -147,9 +147,9 @@ public class ShooterGame : ModuleRules
 		PublicAdditionalShadowFiles.AddRange(ISPCObjects);
 
 		// FIXME: These shouldn't be necessary, but I still haven't found a proper way to relink the module when ISPC is rebuilt.
-		ExternalDependencies.AddRange(ISPCAbsoluteSources);
+		/*ExternalDependencies.AddRange(ISPCAbsoluteSources);
 		ExternalDependencies.AddRange(ISPCObjects);
-		ExternalDependencies.AddRange(ISPCHeaders);
+		ExternalDependencies.AddRange(ISPCHeaders);*/
 	}
 
 	public ShooterGame(ReadOnlyTargetRules Target) : base(Target)

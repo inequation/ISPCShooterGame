@@ -3,9 +3,10 @@
 #include "ShooterGame.h"
 #include "Bots/ShooterBot.h"
 #include "Bots/ShooterAIController.h"
+#include "Bots/ShooterBotMovement.h"
 
 AShooterBot::AShooterBot(const FObjectInitializer& ObjectInitializer) 
-	: Super(ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterBotMovement>(ACharacter::CharacterMovementComponentName))
 {
 	AIControllerClass = AShooterAIController::StaticClass();
 

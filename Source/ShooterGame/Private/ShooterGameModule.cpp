@@ -12,7 +12,7 @@
 #include "AssetRegistryModule.h"
 #include "IAssetRegistry.h"
 
-
+#include "Kernels.ispc.h"
 
 #include "UI/Style/ShooterStyle.h"
 
@@ -27,6 +27,8 @@ class FShooterGameModule : public FDefaultGameModuleImpl
 		//Hot reload hack
 		FSlateStyleRegistry::UnRegisterSlateStyle(FShooterStyle::GetStyleSetName());
 		FShooterStyle::Initialize();
+
+		ispc::Kernel(0);
 	}
 
 	virtual void ShutdownModule() override
