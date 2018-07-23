@@ -8,7 +8,7 @@ using System.Diagnostics;
 public class ShooterGame : ModuleRules
 {
 	// Path to ISPC compiler binary.
-	public static readonly string ISPCExe = "D:\\ispc-v1.9.2-windows\\ispc.exe";
+	public static readonly string ISPCExe = "E:\\ispc-v1.9.2-windows\\ispc.exe";
 
 	// Flags with which to compile ISPC source.
 	public static readonly string ISPCFlags = "-g --target=sse4-i32x4"; // FIXME
@@ -129,7 +129,7 @@ public class ShooterGame : ModuleRules
 		
 		Target.PreBuildSteps.Add(string.Format("pushd {0} && " +
 			"echo Building ISPC kernels && " +
-			"{1} {2} all" +
+			"{1} \"{2}\" all" +
 			" && popd",
 			ObjectDir,
 			MakeCmdline,

@@ -48,7 +48,7 @@ const float VERTICAL_SLOPE_NORMAL_Z = 0.001f; // Slope is vertical if Abs(Normal
 
 namespace CVars
 {
-	static TConsoleVariableData<int32>* MoveIgnoreFirstBlockingOverlap = nullptr;
+	static IConsoleVariable* MoveIgnoreFirstBlockingOverlap = nullptr;
 }
 
 static UShooterBotMovementSystem* GetMovementSystem(UShooterBotMovement* Comp)
@@ -97,7 +97,7 @@ void UShooterBotMovement::UninitializeComponent()
 void UShooterBotMovement::PerformMovement(float DeltaTime)
 {
 	// This code should've been executed as UShooterBotMovementSystem::Tick().
-	checkNoEntry();
+	return;
 }
 
 static bool IsWalkable(const FHitResult& Hit, const float WalkableFloorZ)
@@ -163,9 +163,9 @@ UShooterBotMovementSystem::UShooterBotMovementSystem(const FObjectInitializer& O
 
 void UShooterBotMovementSystem::Initialize()
 {
+	CVars::MoveIgnoreFirstBlockingOverlap = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MoveIgnoreFirstBlockingOverlap"));
+
 	TickFunction.System = this;
-	// FIXME!!!!!
-	//CVars::MoveIgnoreFirstBlockingOverlap = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MoveIgnoreFirstBlockingOverlap"))->AsVariableInt();
 	if (!IsTemplate())
 	{
 		ULevel* Level = GetWorld()->PersistentLevel;
@@ -188,10 +188,12 @@ void UShooterBotMovementSystem::BeginDestroy()
 void UShooterBotMovementSystem::RegisterComponent(UShooterBotMovement* Comp)
 {
 	Components.Add(Comp);
+	Comp->PrimaryComponentTick.AddPrerequisite(this, TickFunction);
 }
 
 void UShooterBotMovementSystem::UnregisterComponent(UShooterBotMovement* Comp)
 {
+	Comp->PrimaryComponentTick.RemovePrerequisite(this, TickFunction);
 	Components.Remove(Comp);
 }
 
@@ -220,7 +222,7 @@ void UShooterBotMovementSystem::Tick(float DeltaSeconds)
 			}
 			// Clear pending physics forces
 			Comp->ClearAccumulatedForces();
-			return;
+			continue;
 		}
 
 		// Force floor update if we've moved outside of CharacterMovement since last update.
@@ -341,7 +343,7 @@ void UShooterBotMovementSystem::Tick(float DeltaSeconds)
 					// Make sure animation didn't trigger an event that destroyed us
 					if (!HasValidData(Comp))
 					{
-						return;
+						continue;
 					}
 
 					// For local human clients, save off root motion data so it can be used by movement networking code.
@@ -439,7 +441,7 @@ void UShooterBotMovementSystem::Tick(float DeltaSeconds)
 
 			if (!HasValidData(Comp))
 			{
-				return;
+				continue;
 			}
 
 			// Update character state based on change from movement
@@ -837,15 +839,11 @@ void UShooterBotMovementSystem::CalcVelocity(UShooterBotMovement* Comp, float De
 	bool bZeroRequestedAcceleration = true;
 	FVector RequestedAcceleration = FVector::ZeroVector;
 	float RequestedSpeed = 0.0f;
-	// TODO ISPC
-	check(!Comp->bHasRequestedVelocity);
-#if 0	// TODO ISPC
 	if (ApplyRequestedMove(Comp, DeltaTime, MaxAccel, MaxSpeed, Friction, BrakingDeceleration, RequestedAcceleration, RequestedSpeed))
 	{
 		RequestedAcceleration = RequestedAcceleration.GetClampedToMaxSize(MaxAccel);
 		bZeroRequestedAcceleration = false;
 	}
-#endif	// TODO ISPC
 
 	if (Comp->bForceMaxAccel)
 	{
@@ -966,7 +964,7 @@ void UShooterBotMovementSystem::PhysWalking(UShooterBotMovement* Comp, float del
 		// Apply acceleration
 		if (!Comp->HasAnimRootMotion() && !Comp->CurrentRootMotion.HasOverrideVelocity())
 		{
-			Comp->CalcVelocity(timeTick, Comp->GroundFriction, false, Comp->GetMaxBrakingDeceleration());
+			CalcVelocity(Comp, timeTick, Comp->GroundFriction, false, Comp->GetMaxBrakingDeceleration());
 			checkCode(ensureMsgf(!Comp->Velocity.ContainsNaN(), TEXT("PhysWalking: Velocity contains NaN after CalcVelocity (%s)\n%s"), *GetPathNameSafe(Comp), *Comp->Velocity.ToString()));
 		}
 
@@ -1256,7 +1254,7 @@ void UShooterBotMovementSystem::PhysNavWalking(UShooterBotMovement* Comp, float 
 		if (!AdjustedDelta.IsNearlyZero())
 		{
 			FHitResult HitResult;
-			const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap = !!CVars::MoveIgnoreFirstBlockingOverlap->GetValueOnGameThread();
+			const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap = !!CVars::MoveIgnoreFirstBlockingOverlap->GetInt();
 			SafeMoveUpdatedComponent(Comp, AdjustedDelta, UpdatedComponent->GetComponentQuat(), bSweepWhileNavWalking, HitResult);
 		}
 
@@ -1370,7 +1368,7 @@ void UShooterBotMovementSystem::PhysFalling(UShooterBotMovement* Comp, float del
 		// Move
 		FHitResult Hit(1.f);
 		FVector Adjusted = 0.5f*(OldVelocity + Comp->Velocity) * timeTick;
-		const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap = !!CVars::MoveIgnoreFirstBlockingOverlap->GetValueOnGameThread();
+		const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap = !!CVars::MoveIgnoreFirstBlockingOverlap->GetInt();
 		SafeMoveUpdatedComponent( Comp, bMoveIgnoreFirstBlockingOverlap, Adjusted, PawnRotation, true, Hit);
 		
 		if (!HasValidData(Comp))
@@ -2215,7 +2213,7 @@ void UShooterBotMovementSystem::AdjustFloorHeight(UShooterBotMovement* Comp)
 		const float AvgFloorDist = (UCharacterMovementComponent::MIN_FLOOR_DIST + UCharacterMovementComponent::MAX_FLOOR_DIST) * 0.5f;
 		const float MoveDist = AvgFloorDist - OldFloorDist;
 		
-		const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap = !!CVars::MoveIgnoreFirstBlockingOverlap->GetValueOnGameThread();
+		const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap = !!CVars::MoveIgnoreFirstBlockingOverlap->GetInt();
 		SafeMoveUpdatedComponent( Comp, bMoveIgnoreFirstBlockingOverlap, FVector(0.f,0.f,MoveDist), Comp->UpdatedComponent->GetComponentQuat(), true, AdjustHit );
 		UE_LOG(LogUnwrappedCharacterMovement, VeryVerbose, TEXT("Adjust floor height %.3f (Hit = %d)"), MoveDist, AdjustHit.bBlockingHit);
 
@@ -2866,14 +2864,11 @@ void UShooterBotMovementSystem::ProcessLanded(UShooterBotMovement* Comp, const F
 
 		SetPostLandedPhysics(Comp, Hit);
 	}
-#if 1	// TODO ISPC
-	check(!Comp->PathFollowingComp.IsValid());
-#else
-	if (PathFollowingComp.IsValid())
+	// TODO ISPC
+	if (Comp->PathFollowingComp.IsValid())
 	{
-		PathFollowingComp->OnLanded();
+		Comp->PathFollowingComp->OnLanded();
 	}
-#endif
 
 	StartNewPhysics(Comp, remainingTime, Iterations);
 }
@@ -2941,7 +2936,7 @@ void UShooterBotMovementSystem::HandleImpact(UShooterBotMovement* Comp, const FH
 void UShooterBotMovementSystem::ApplyImpactPhysicsForces(UShooterBotMovement* Comp, const FHitResult& Impact, const FVector& ImpactAcceleration, const FVector& ImpactVelocity)
 {
 #if 1	// TODO ISPC
-	check(!Comp->bEnablePhysicsInteraction);
+	Comp->ApplyImpactPhysicsForces(Impact, ImpactAcceleration, ImpactVelocity);
 #else
 	if (Comp->bEnablePhysicsInteraction && Impact.bBlockingHit )
 	{
@@ -3247,4 +3242,51 @@ void UShooterBotMovementSystem::NotifyBumpedPawn(UShooterBotMovement* Comp, APaw
 
 	// Unlock avoidance move. This mostly happens when two pawns who are locked into avoidance moves collide with each other.
 	Comp->AvoidanceLockTimer = 0.0f;
+}
+
+bool UShooterBotMovementSystem::ApplyRequestedMove(UShooterBotMovement* Comp, float DeltaTime, float MaxAccel, float MaxSpeed, float Friction, float BrakingDeceleration, FVector& OutAcceleration, float& OutRequestedSpeed)
+{
+	if (Comp->bHasRequestedVelocity)
+	{
+		const float RequestedSpeedSquared = Comp->RequestedVelocity.SizeSquared();
+		if (RequestedSpeedSquared < KINDA_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		// Compute requested speed from path following
+		float RequestedSpeed = FMath::Sqrt(RequestedSpeedSquared);
+		const FVector RequestedMoveDir = Comp->RequestedVelocity / RequestedSpeed;
+		RequestedSpeed = (Comp->bRequestedMoveWithMaxSpeed ? MaxSpeed : FMath::Min(MaxSpeed, RequestedSpeed));
+		
+		// Compute actual requested velocity
+		const FVector MoveVelocity = RequestedMoveDir * RequestedSpeed;
+		
+		// Compute acceleration. Use MaxAccel to limit speed increase, 1% buffer.
+		FVector NewAcceleration = FVector::ZeroVector;
+		const float CurrentSpeedSq = Comp->Velocity.SizeSquared();
+		if (Comp->bRequestedMoveUseAcceleration && CurrentSpeedSq < FMath::Square(RequestedSpeed * 1.01f))
+		{
+			// Turn in the same manner as with input acceleration.
+			const float VelSize = FMath::Sqrt(CurrentSpeedSq);
+			Comp->Velocity = Comp->Velocity - (Comp->Velocity - RequestedMoveDir * VelSize) * FMath::Min(DeltaTime * Friction, 1.f);
+
+			// How much do we need to accelerate to get to the new velocity?
+			NewAcceleration = ((MoveVelocity - Comp->Velocity) / DeltaTime);
+			NewAcceleration = NewAcceleration.GetClampedToMaxSize(MaxAccel);
+		}
+		else
+		{
+			// Just set velocity directly.
+			// If decelerating we do so instantly, so we don't slide through the destination if we can't brake fast enough.
+			Comp->Velocity = MoveVelocity;
+		}
+
+		// Copy to out params
+		OutRequestedSpeed = RequestedSpeed;
+		OutAcceleration = NewAcceleration;
+		return true;
+	}
+
+	return false;
 }

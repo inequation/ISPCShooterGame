@@ -459,6 +459,22 @@ protected:
 	 */
 	FVector LimitAirControl(UShooterBotMovement* Comp, float DeltaTime, const FVector& FallAcceleration, const FHitResult& HitResult, bool bCheckForValidLandingSpot);
 
+	/**
+	 * Use velocity requested by path following to compute a requested acceleration and speed.
+	 * This does not affect the Acceleration member variable, as that is used to indicate input acceleration.
+	 * This may directly affect current Velocity.
+	 *
+	 * @param DeltaTime				Time slice for this operation
+	 * @param MaxAccel				Max acceleration allowed in OutAcceleration result.
+	 * @param MaxSpeed				Max speed allowed when computing OutRequestedSpeed.
+	 * @param Friction				Current friction.
+	 * @param BrakingDeceleration	Current braking deceleration.
+	 * @param OutAcceleration		Acceleration computed based on requested velocity.
+	 * @param OutRequestedSpeed		Speed of resulting velocity request, which can affect the max speed allowed by movement.
+	 * @return Whether there is a requested velocity and acceleration, resulting in valid OutAcceleration and OutRequestedSpeed values.
+	 */
+	bool ApplyRequestedMove(UShooterBotMovement* Comp, float DeltaTime, float MaxAccel, float MaxSpeed, float Friction, float BrakingDeceleration, FVector& OutAcceleration, float& OutRequestedSpeed);
+
 protected:
 	UPROPERTY()
 	TArray<UShooterBotMovement*> Components;
