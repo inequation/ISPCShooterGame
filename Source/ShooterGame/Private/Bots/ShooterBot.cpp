@@ -3,7 +3,7 @@
 #include "ShooterGame.h"
 #include "Bots/ShooterBot.h"
 #include "Bots/ShooterAIController.h"
-#include "Bots/ShooterBotMovement.h"
+#include "Bots/ShooterUnrolledCppMovement.h"
 
 TAutoConsoleVariable<int32> GMovementImplementation(
 	TEXT("ispc.MovementImplementation"),
@@ -19,7 +19,7 @@ AShooterBot::AShooterBot(const FObjectInitializer& ObjectInitializer)
 	: Super(
 		GMovementImplementation.GetValueOnGameThread() == 0
 		? ObjectInitializer.SetDefaultSubobjectClass<UShooterCharacterMovement>(ACharacter::CharacterMovementComponentName)
-		: ObjectInitializer.SetDefaultSubobjectClass<UShooterBotMovement>(ACharacter::CharacterMovementComponentName)
+		: ObjectInitializer.SetDefaultSubobjectClass<UShooterUnrolledCppMovement>(ACharacter::CharacterMovementComponentName)
 	)
 {
 	AIControllerClass = AShooterAIController::StaticClass();

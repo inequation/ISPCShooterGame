@@ -4,10 +4,10 @@
 
 #pragma once
 #include "Player/ShooterCharacterMovement.h"
-#include "ShooterBotMovement.generated.h"
+#include "ShooterUnrolledCppMovement.generated.h"
 
 UCLASS()
-class UShooterBotMovement : public UShooterCharacterMovement
+class UShooterUnrolledCppMovement : public UShooterCharacterMovement
 {
 	GENERATED_UCLASS_BODY()
 
@@ -18,7 +18,7 @@ public:
 	/** Perform movement on an autonomous client */
 	virtual void PerformMovement(float DeltaTime) override;
 
-	friend class UShooterBotMovementSystem;
+	friend class UShooterUnrolledCppMovementSystem;
 };
 
 USTRUCT()
@@ -26,7 +26,7 @@ struct FSystemTickFunction : public FTickFunction
 {
 	GENERATED_USTRUCT_BODY()
 
-	class UShooterBotMovementSystem* System;
+	class UShooterUnrolledCppMovementSystem* System;
 
 	FSystemTickFunction()
 		: FTickFunction()
@@ -47,15 +47,15 @@ struct TStructOpsTypeTraits<FSystemTickFunction> : public TStructOpsTypeTraitsBa
 };
 
 UCLASS()
-class UShooterBotMovementSystem : public UObject
+class UShooterUnrolledCppMovementSystem : public UObject
 {
 	GENERATED_UCLASS_BODY()
 
 public:
 	void Initialize();
 	void Uninitialize();
-	void RegisterComponent(UShooterBotMovement* Comp);
-	void UnregisterComponent(UShooterBotMovement* Comp);
+	void RegisterComponent(UShooterUnrolledCppMovement* Comp);
+	void UnregisterComponent(UShooterUnrolledCppMovement* Comp);
 
 	void Tick(float DeltaTime);
 
@@ -68,7 +68,7 @@ public:
 	struct FSystemTickFunction TickFunction;
 
 	/** changes physics based on MovementMode */
-	void StartNewPhysics(UShooterBotMovement* Comp, float deltaTime, int32 Iterations);
+	void StartNewPhysics(UShooterUnrolledCppMovement* Comp, float deltaTime, int32 Iterations);
 
 	/**
 	 * Change movement mode.
@@ -77,42 +77,42 @@ public:
 	 * @param NewCustomMode		The new custom sub-mode, only applicable if NewMovementMode is Custom.
 	 */
 	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
-	void SetMovementMode(UShooterBotMovement* Comp, EMovementMode NewMovementMode, uint8 NewCustomMode = 0);
+	void SetMovementMode(UShooterUnrolledCppMovement* Comp, EMovementMode NewMovementMode, uint8 NewCustomMode = 0);
 
 	/** Set movement mode to the default based on the current physics volume. */
-	void SetDefaultMovementMode(UShooterBotMovement* Comp);
+	void SetDefaultMovementMode(UShooterUnrolledCppMovement* Comp);
 
 	/**
 	 * If we have a movement base, get the velocity that should be imparted by that base, usually when jumping off of it.
 	 * Only applies the components of the velocity enabled by bImpartBaseVelocityX, bImpartBaseVelocityY, bImpartBaseVelocityZ.
 	 */
 	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
-	FVector GetImpartedMovementBaseVelocity(UShooterBotMovement* Comp) const;
+	FVector GetImpartedMovementBaseVelocity(UShooterUnrolledCppMovement* Comp) const;
 
 	//BEGIN UMovementComponent Interface
-	float GetMaxSpeed(UShooterBotMovement* Comp) const;
-	void StopActiveMovement(UShooterBotMovement* Comp);
-	bool IsCrouching(UShooterBotMovement* Comp) const;
-	bool IsFalling(UShooterBotMovement* Comp) const;
-	bool IsMovingOnGround(UShooterBotMovement* Comp) const;
-	bool IsSwimming(UShooterBotMovement* Comp) const;
-	bool IsFlying(UShooterBotMovement* Comp) const;
-	float GetGravityZ(UShooterBotMovement* Comp) const;
-	void AddRadialForce(UShooterBotMovement* Comp, const FVector& Origin, float Radius, float Strength, enum ERadialImpulseFalloff Falloff);
-	void AddRadialImpulse(UShooterBotMovement* Comp, const FVector& Origin, float Radius, float Strength, enum ERadialImpulseFalloff Falloff, bool bVelChange);
+	float GetMaxSpeed(UShooterUnrolledCppMovement* Comp) const;
+	void StopActiveMovement(UShooterUnrolledCppMovement* Comp);
+	bool IsCrouching(UShooterUnrolledCppMovement* Comp) const;
+	bool IsFalling(UShooterUnrolledCppMovement* Comp) const;
+	bool IsMovingOnGround(UShooterUnrolledCppMovement* Comp) const;
+	bool IsSwimming(UShooterUnrolledCppMovement* Comp) const;
+	bool IsFlying(UShooterUnrolledCppMovement* Comp) const;
+	float GetGravityZ(UShooterUnrolledCppMovement* Comp) const;
+	void AddRadialForce(UShooterUnrolledCppMovement* Comp, const FVector& Origin, float Radius, float Strength, enum ERadialImpulseFalloff Falloff);
+	void AddRadialImpulse(UShooterUnrolledCppMovement* Comp, const FVector& Origin, float Radius, float Strength, enum ERadialImpulseFalloff Falloff, bool bVelChange);
 	//END UMovementComponent Interface
 
 	//Begin UPawnMovementComponent Interface
-	void NotifyBumpedPawn(UShooterBotMovement* Comp, APawn* BumpedPawn);
+	void NotifyBumpedPawn(UShooterUnrolledCppMovement* Comp, APawn* BumpedPawn);
 	//End UPawnMovementComponent Interface
 
 	/** @return Maximum acceleration for the current state. */
 	UFUNCTION(BlueprintCallable, Category = "Pawn|Components|CharacterMovement")
-	float GetMinAnalogSpeed(UShooterBotMovement* Comp) const;
+	float GetMinAnalogSpeed(UShooterUnrolledCppMovement* Comp) const;
 
 	/** @return The distance from the edge of the capsule within which we don't allow the character to perch on the edge of a surface. */
 	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
-	float GetPerchRadiusThreshold(UShooterBotMovement* Comp) const;
+	float GetPerchRadiusThreshold(UShooterUnrolledCppMovement* Comp) const;
 
 	/**
 	 * Returns true if the current velocity is exceeding the given max speed (usually the result of GetMaxSpeed()), within a small error tolerance.
@@ -120,23 +120,23 @@ public:
 	 * can cause the max speed to be violated.
 	 */
 	UFUNCTION(BlueprintCallable, Category="Components|Movement")
-	bool IsExceedingMaxSpeed(UShooterBotMovement* Comp, float MaxSpeed) const;
+	bool IsExceedingMaxSpeed(UShooterUnrolledCppMovement* Comp, float MaxSpeed) const;
 
-	APhysicsVolume* GetPhysicsVolume(UShooterBotMovement* Comp) const;
+	APhysicsVolume* GetPhysicsVolume(UShooterUnrolledCppMovement* Comp) const;
 
 	/** Return true if we have a valid CharacterOwner and UpdatedComponent. */
-	bool HasValidData(const UShooterBotMovement* Comp) const;
+	bool HasValidData(const UShooterUnrolledCppMovement* Comp) const;
 
 	/** @return Maximum deceleration for the current state when braking (ie when there is no acceleration). */
 	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
-	float GetMaxBrakingDeceleration(UShooterBotMovement* Comp) const;
+	float GetMaxBrakingDeceleration(UShooterUnrolledCppMovement* Comp) const;
 
 	/** @return Maximum acceleration for the current state. */
 	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
-	float GetMaxAcceleration(UShooterBotMovement* Comp) const;
+	float GetMaxAcceleration(UShooterUnrolledCppMovement* Comp) const;
 
 	/** return true if it's in PhysicsVolume with water flag **/
-	bool IsInWater(UShooterBotMovement* Comp) const;
+	bool IsInWater(UShooterUnrolledCppMovement* Comp) const;
 
 	/**
 	 * Updates Velocity and Acceleration based on the current state, applying the effects of friction and acceleration or deceleration. Does not apply gravity.
@@ -148,13 +148,13 @@ public:
 	 * @param	BrakingDeceleration				deceleration applied when not accelerating, or when exceeding max velocity.
 	 */
 	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
-	void CalcVelocity(UShooterBotMovement* Comp, float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration);
+	void CalcVelocity(UShooterUnrolledCppMovement* Comp, float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration);
 
 	/** @returns location of controlled actor's "feet" meaning center of bottom of collision bounding box */
-	FORCEINLINE FVector GetActorFeetLocation(UShooterBotMovement* Comp) const { return Comp->UpdatedComponent ? (Comp->UpdatedComponent->GetComponentLocation() - FVector(0,0,Comp->UpdatedComponent->Bounds.BoxExtent.Z)) : FNavigationSystem::InvalidLocation; }
+	FORCEINLINE FVector GetActorFeetLocation(UShooterUnrolledCppMovement* Comp) const { return Comp->UpdatedComponent ? (Comp->UpdatedComponent->GetComponentLocation() - FVector(0,0,Comp->UpdatedComponent->Bounds.BoxExtent.Z)) : FNavigationSystem::InvalidLocation; }
 
 	/** @Return MovementMode string */
-	FString GetMovementName(UShooterBotMovement* Comp) const;
+	FString GetMovementName(UShooterUnrolledCppMovement* Comp) const;
 
 	/**
 	 * Project a location to navmesh to find adjusted height.
@@ -162,28 +162,31 @@ public:
 	 * @param NavFloorLocation	Location on navmesh
 	 * @return True if projection was performed (successfully or not)
 	 */
-	bool FindNavFloor(UShooterBotMovement* Comp, const FVector& TestLocation, FNavLocation& NavFloorLocation) const;
+	bool FindNavFloor(UShooterUnrolledCppMovement* Comp, const FVector& TestLocation, FNavLocation& NavFloorLocation) const;
 
 	/** @return true if component can swim */
-	FORCEINLINE bool CanEverSwim(UShooterBotMovement* Comp) const { return Comp->NavAgentProps.bCanSwim; }
+	FORCEINLINE bool CanEverSwim(UShooterUnrolledCppMovement* Comp) const { return Comp->NavAgentProps.bCanSwim; }
 
 protected:
-	/** @note Movement update functions should only be called through StartNewPhysics()*/
-	void PhysWalking(UShooterBotMovement* Comp, float deltaTime, int32 Iterations);
+	/** Perform movement on an autonomous client */
+	void PerformMovement(UShooterUnrolledCppMovement* Comp, float DeltaTime);
 
 	/** @note Movement update functions should only be called through StartNewPhysics()*/
-	void PhysNavWalking(UShooterBotMovement* Comp, float deltaTime, int32 Iterations);
+	void PhysWalking(UShooterUnrolledCppMovement* Comp, float deltaTime, int32 Iterations);
 
 	/** @note Movement update functions should only be called through StartNewPhysics()*/
-	void PhysFlying(UShooterBotMovement* Comp, float deltaTime, int32 Iterations);
+	void PhysNavWalking(UShooterUnrolledCppMovement* Comp, float deltaTime, int32 Iterations);
 
 	/** @note Movement update functions should only be called through StartNewPhysics()*/
-	void PhysSwimming(UShooterBotMovement* Comp, float deltaTime, int32 Iterations);
+	void PhysFlying(UShooterUnrolledCppMovement* Comp, float deltaTime, int32 Iterations);
 
 	/** @note Movement update functions should only be called through StartNewPhysics()*/
-	void PhysCustom(UShooterBotMovement* Comp, float deltaTime, int32 Iterations);
+	void PhysSwimming(UShooterUnrolledCppMovement* Comp, float deltaTime, int32 Iterations);
 
-	void PhysFalling(UShooterBotMovement* Comp, float deltaTime, int32 Iterations);
+	/** @note Movement update functions should only be called through StartNewPhysics()*/
+	void PhysCustom(UShooterUnrolledCppMovement* Comp, float deltaTime, int32 Iterations);
+
+	void PhysFalling(UShooterUnrolledCppMovement* Comp, float deltaTime, int32 Iterations);
 
 	/** 
 	 * Handle start swimming functionality
@@ -193,10 +196,10 @@ protected:
 	 * @param remainingTime - DeltaTime to complete transition to swimming
 	 * @param Iterations - physics iteration count
 	 */
-	void StartSwimming(UShooterBotMovement* Comp, FVector OldLocation, FVector OldVelocity, float timeTick, float remainingTime, int32 Iterations);
+	void StartSwimming(UShooterUnrolledCppMovement* Comp, FVector OldLocation, FVector OldVelocity, float timeTick, float remainingTime, int32 Iterations);
 
 	/** Transition from walking to falling */
-	void StartFalling(UShooterBotMovement* Comp, int32 Iterations, float remainingTime, float timeTick, const FVector& Delta, const FVector& subLoc);
+	void StartFalling(UShooterUnrolledCppMovement* Comp, int32 Iterations, float remainingTime, float timeTick, const FVector& Delta, const FVector& subLoc);
 
 	/**
 	 * Sweeps a vertical trace to find the floor for the capsule at the given location. Will attempt to perch if ShouldComputePerchResult() returns true for the downward sweep result.
@@ -207,7 +210,7 @@ protected:
 	 * @param bZeroDelta:			If true, the capsule was not actively moving in this update (can be used to avoid unnecessary floor tests).
 	 * @param DownwardSweepResult:	If non-null and it contains valid blocking hit info, this will be used as the result of a downward sweep test instead of doing it as part of the update.
 	 */
-	void FindFloor(UShooterBotMovement* Comp, const FVector& CapsuleLocation, FFindFloorResult& OutFloorResult, bool bZeroDelta, const FHitResult* DownwardSweepResult = nullptr) const;
+	void FindFloor(UShooterUnrolledCppMovement* Comp, const FVector& CapsuleLocation, FFindFloorResult& OutFloorResult, bool bZeroDelta, const FHitResult* DownwardSweepResult = nullptr) const;
 
 	/**
 	 * Compute distance to the floor from bottom sphere of capsule and store the result in OutFloorResult.
@@ -222,7 +225,7 @@ protected:
 	 * @param SweepRadius:		The radius to use for sweep tests. Should be <= capsule radius.
 	 * @param DownwardSweepResult:	If non-null and it contains valid blocking hit info, this will be used as the result of a downward sweep test instead of doing it as part of the update.
 	 */
-	void ComputeFloorDist(UShooterBotMovement* Comp, const FVector& CapsuleLocation, float LineDistance, float SweepDistance, FFindFloorResult& OutFloorResult, float SweepRadius, const FHitResult* DownwardSweepResult = NULL) const;
+	void ComputeFloorDist(UShooterUnrolledCppMovement* Comp, const FVector& CapsuleLocation, float LineDistance, float SweepDistance, FFindFloorResult& OutFloorResult, float SweepRadius, const FHitResult* DownwardSweepResult = NULL) const;
 
 	/**
 	 * Sweep against the world and return the first blocking hit.
@@ -238,7 +241,7 @@ protected:
 	 * @return True if OutHit contains a blocking hit entry.
 	 */
 	bool FloorSweepTest(
-		UShooterBotMovement* Comp,
+		UShooterUnrolledCppMovement* Comp,
 		struct FHitResult& OutHit,
 		const FVector& Start,
 		const FVector& End,
@@ -252,19 +255,19 @@ protected:
 	 *  Revert to previous position OldLocation, return to being based on OldBase.
 	 *  if bFailMove, stop movement and notify controller
 	 */	
-	void RevertMove(UShooterBotMovement* Comp, const FVector& OldLocation, UPrimitiveComponent* OldBase, const FVector& InOldBaseLocation, const FFindFloorResult& OldFloor, bool bFailMove);
+	void RevertMove(UShooterUnrolledCppMovement* Comp, const FVector& OldLocation, UPrimitiveComponent* OldBase, const FVector& InOldBaseLocation, const FFindFloorResult& OldFloor, bool bFailMove);
 
 	/**
 	 * Adjusts velocity when walking so that Z velocity is zero.
 	 * When bMaintainHorizontalGroundVelocity is false, also rescales the velocity vector to maintain the original magnitude, but in the horizontal direction.
 	 */
-	void MaintainHorizontalGroundVelocity(UShooterBotMovement* Comp);
+	void MaintainHorizontalGroundVelocity(UShooterUnrolledCppMovement* Comp);
 
 	/** Overridden to enforce max distances based on hit geometry. */
-	FVector GetPenetrationAdjustment(UShooterBotMovement* Comp, const FHitResult& Hit) const;
+	FVector GetPenetrationAdjustment(UShooterUnrolledCppMovement* Comp, const FHitResult& Hit) const;
 
 	/** Overridden to set bJustTeleported to true, so we don't make incorrect velocity calculations based on adjusted movement. */
-	bool ResolvePenetration(UShooterBotMovement* Comp, const FVector& Adjustment, const FHitResult& Hit, const FQuat& NewRotation);
+	bool ResolvePenetration(UShooterUnrolledCppMovement* Comp, const FVector& Adjustment, const FHitResult& Hit, const FQuat& NewRotation);
 
 	/**
 	 * Compute the sweep result of the smaller capsule with radius specified by GetValidPerchRadius(),
@@ -278,34 +281,34 @@ protected:
 	 * @param OutPerchFloorResult:	Contains the result of the perch floor test.
 	 * @return True if the current location is a valid spot at which to perch.
 	 */
-	bool ComputePerchResult(UShooterBotMovement* Comp, const float TestRadius, const FHitResult& InHit, const float InMaxFloorDist, FFindFloorResult& OutPerchFloorResult) const;
+	bool ComputePerchResult(UShooterUnrolledCppMovement* Comp, const float TestRadius, const FHitResult& InHit, const float InMaxFloorDist, FFindFloorResult& OutPerchFloorResult) const;
 
 	/** Called after MovementMode has changed. Base implementation does special handling for starting certain modes, then notifies the CharacterOwner. */
-	void OnMovementModeChanged(UShooterBotMovement* Comp, EMovementMode PreviousMovementMode, uint8 PreviousCustomMode);
+	void OnMovementModeChanged(UShooterUnrolledCppMovement* Comp, EMovementMode PreviousMovementMode, uint8 PreviousCustomMode);
 
 	/** Adjust distance from floor, trying to maintain a slight offset from the floor when walking (based on CurrentFloor). */
-	void AdjustFloorHeight(UShooterBotMovement* Comp);
+	void AdjustFloorHeight(UShooterUnrolledCppMovement* Comp);
 
 	/** Return PrimitiveComponent we are based on (standing and walking on). */
 	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
-	UPrimitiveComponent* GetMovementBase(UShooterBotMovement* Comp) const;
+	UPrimitiveComponent* GetMovementBase(UShooterUnrolledCppMovement* Comp) const;
 
 	/** Update the base of the character, which is the PrimitiveComponent we are standing on. */
-	void SetBase(UShooterBotMovement* Comp, UPrimitiveComponent* NewBase, const FName BoneName = NAME_None, bool bNotifyActor=true);
+	void SetBase(UShooterUnrolledCppMovement* Comp, UPrimitiveComponent* NewBase, const FName BoneName = NAME_None, bool bNotifyActor=true);
 
 	/**
 	 * Update the base of the character, using the given floor result if it is walkable, or null if not. Calls SetBase().
 	 */
-	void SetBaseFromFloor(UShooterBotMovement* Comp, const FFindFloorResult& FloorResult);
+	void SetBaseFromFloor(UShooterUnrolledCppMovement* Comp, const FFindFloorResult& FloorResult);
 
 	/** Update or defer updating of position based on Base movement */
-	void MaybeUpdateBasedMovement(UShooterBotMovement* Comp, float DeltaSeconds);
+	void MaybeUpdateBasedMovement(UShooterUnrolledCppMovement* Comp, float DeltaSeconds);
 
 	/** Update position based on Base movement */
-	void UpdateBasedMovement(UShooterBotMovement* Comp, float DeltaSeconds);
+	void UpdateBasedMovement(UShooterUnrolledCppMovement* Comp, float DeltaSeconds);
 
 	/** Update controller's view rotation as pawn's base rotates */
-	void UpdateBasedRotation(UShooterBotMovement* Comp, FRotator& FinalRotation, const FRotator& ReducedRotation);
+	void UpdateBasedRotation(UShooterUnrolledCppMovement* Comp, FRotator& FinalRotation, const FRotator& ReducedRotation);
 
 	/**
 	 * Calls MoveUpdatedComponent(), handling initial penetrations by calling ResolvePenetration().
@@ -313,41 +316,41 @@ protected:
 	 * @note The 'Teleport' flag is currently always treated as 'None' (not teleporting) when used in an active FScopedMovementUpdate.
 	 * @return result of the final MoveUpdatedComponent() call.
 	 */
-	bool SafeMoveUpdatedComponent(UShooterBotMovement* Comp, const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap, const FVector& Delta, const FQuat& NewRotation,    bool bSweep, FHitResult& OutHit, ETeleportType Teleport = ETeleportType::None);
+	bool SafeMoveUpdatedComponent(UShooterUnrolledCppMovement* Comp, const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap, const FVector& Delta, const FQuat& NewRotation,    bool bSweep, FHitResult& OutHit, ETeleportType Teleport = ETeleportType::None);
 
-	bool MoveUpdatedComponent(UShooterBotMovement* Comp, const FVector& Delta, const FQuat& NewRotation, bool bSweep, FHitResult* OutHit = NULL, ETeleportType Teleport = ETeleportType::None);
+	bool MoveUpdatedComponent(UShooterUnrolledCppMovement* Comp, const FVector& Delta, const FQuat& NewRotation, bool bSweep, FHitResult* OutHit = NULL, ETeleportType Teleport = ETeleportType::None);
 
 	/**
 	 * Constrain a direction vector to the plane constraint, if enabled.
 	 * @see SetPlaneConstraint
 	 */
 	UFUNCTION(BlueprintCallable, Category="Components|Movement|Planar")
-	FVector ConstrainDirectionToPlane(UShooterBotMovement* Comp, FVector Direction) const;
+	FVector ConstrainDirectionToPlane(UShooterUnrolledCppMovement* Comp, FVector Direction) const;
 
 	/** Constrain a position vector to the plane constraint, if enabled. */
 	UFUNCTION(BlueprintCallable, Category="Components|Movement|Planar")
-	FVector ConstrainLocationToPlane(UShooterBotMovement* Comp, FVector Location) const;
+	FVector ConstrainLocationToPlane(UShooterUnrolledCppMovement* Comp, FVector Location) const;
 
 	/** Constrain a normal vector (of unit length) to the plane constraint, if enabled. */
 	UFUNCTION(BlueprintCallable, Category="Components|Movement|Planar")
-	FVector ConstrainNormalToPlane(UShooterBotMovement* Comp, FVector Normal) const;
+	FVector ConstrainNormalToPlane(UShooterUnrolledCppMovement* Comp, FVector Normal) const;
 
 	/** Return true if the given collision shape overlaps other geometry at the given location and rotation. The collision params are set by InitCollisionParams(). */
-	bool OverlapTest(UShooterBotMovement* Comp, const FVector& Location, const FQuat& RotationQuat, const ECollisionChannel CollisionChannel, const FCollisionShape& CollisionShape, const AActor* IgnoreActor) const;
+	bool OverlapTest(UShooterUnrolledCppMovement* Comp, const FVector& Location, const FQuat& RotationQuat, const ECollisionChannel CollisionChannel, const FCollisionShape& CollisionShape, const AActor* IgnoreActor) const;
 
 	/** Restores Velocity to LastPreAdditiveVelocity during Root Motion Phys*() function calls */
-	void RestorePreAdditiveRootMotionVelocity(UShooterBotMovement* Comp);
+	void RestorePreAdditiveRootMotionVelocity(UShooterUnrolledCppMovement* Comp);
 
 	/** Applies root motion from root motion sources to velocity (override and additive) */
-	void ApplyRootMotionToVelocity(UShooterBotMovement* Comp, float deltaTime);
+	void ApplyRootMotionToVelocity(UShooterUnrolledCppMovement* Comp, float deltaTime);
 
 	/**
 	 * Constrain components of root motion velocity that may not be appropriate given the current movement mode (e.g. when falling Z may be ignored).
 	 */
-	FVector ConstrainAnimRootMotionVelocity(UShooterBotMovement* Comp, const FVector& RootMotionVelocity, const FVector& CurrentVelocity) const;
+	FVector ConstrainAnimRootMotionVelocity(UShooterUnrolledCppMovement* Comp, const FVector& RootMotionVelocity, const FVector& CurrentVelocity) const;
 
 	/** Slows towards stop. */
-	void ApplyVelocityBraking(UShooterBotMovement* Comp, float DeltaTime, float Friction, float BrakingDeceleration);
+	void ApplyVelocityBraking(UShooterUnrolledCppMovement* Comp, float DeltaTime, float Friction, float BrakingDeceleration);
 
 	/**
 	 * Get the lateral acceleration to use during falling movement. The Z component of the result is ignored.
@@ -358,7 +361,7 @@ protected:
 	 * @param DeltaTime Time step for the current update.
 	 * @return Acceleration to use during falling movement.
 	 */
-	FVector GetFallingLateralAcceleration(UShooterBotMovement* Comp, float DeltaTime);
+	FVector GetFallingLateralAcceleration(UShooterUnrolledCppMovement* Comp, float DeltaTime);
 
 	/**
 	 * Get the air control to use during falling movement.
@@ -371,7 +374,7 @@ protected:
 	 * @return Air control to use during falling movement.
 	 * @see AirControl, BoostAirControl(), LimitAirControl(), GetFallingLateralAcceleration()
 	 */
-	FVector GetAirControl(UShooterBotMovement* Comp, float DeltaTime, float TickAirControl, const FVector& FallAcceleration);
+	FVector GetAirControl(UShooterUnrolledCppMovement* Comp, float DeltaTime, float TickAirControl, const FVector& FallAcceleration);
 
 	/**
 	 * Compute remaining time step given remaining time and current iterations.
@@ -382,33 +385,33 @@ protected:
 	 * @return The remaining time step to use for the next sub-step of iteration.
 	 * @see MaxSimulationTimeStep, MaxSimulationIterations
 	 */
-	float GetSimulationTimeStep(UShooterBotMovement* Comp, float RemainingTime, int32 Iterations) const;
+	float GetSimulationTimeStep(UShooterUnrolledCppMovement* Comp, float RemainingTime, int32 Iterations) const;
 
 	/** Called if bNotifyApex is true and character has just passed the apex of its jump. */
-	void NotifyJumpApex(UShooterBotMovement* Comp);
+	void NotifyJumpApex(UShooterUnrolledCppMovement* Comp);
 
 	/**
 	 * Compute new falling velocity from given velocity and gravity. Applies the limits of the current Physics Volume's TerminalVelocity.
 	 */
-	FVector NewFallVelocity(UShooterBotMovement* Comp, const FVector& InitialVelocity, const FVector& Gravity, float DeltaTime) const;
+	FVector NewFallVelocity(UShooterUnrolledCppMovement* Comp, const FVector& InitialVelocity, const FVector& Gravity, float DeltaTime) const;
 
 	/** Verify that the supplied hit result is a valid landing spot when falling. */
-	bool IsValidLandingSpot(UShooterBotMovement* Comp, const FVector& CapsuleLocation, const FHitResult& Hit) const;
+	bool IsValidLandingSpot(UShooterUnrolledCppMovement* Comp, const FVector& CapsuleLocation, const FHitResult& Hit) const;
 
 	/**
 	 * Determine whether we should try to find a valid landing spot after an impact with an invalid one (based on the Hit result).
 	 * For example, landing on the lower portion of the capsule on the edge of geometry may be a walkable surface, but could have reported an unwalkable impact normal.
 	 */
-	bool ShouldCheckForValidLandingSpot(UShooterBotMovement* Comp, float DeltaTime, const FVector& Delta, const FHitResult& Hit) const;
+	bool ShouldCheckForValidLandingSpot(UShooterUnrolledCppMovement* Comp, float DeltaTime, const FVector& Delta, const FHitResult& Hit) const;
 
 	/** Handle landing against Hit surface over remaingTime and iterations, calling SetPostLandedPhysics() and starting the new movement mode. */
-	void ProcessLanded(UShooterBotMovement* Comp, const FHitResult& Hit, float remainingTime, int32 Iterations);
+	void ProcessLanded(UShooterUnrolledCppMovement* Comp, const FHitResult& Hit, float remainingTime, int32 Iterations);
 
 	/** Use new physics after landing. Defaults to swimming if in water, walking otherwise. */
-	void SetPostLandedPhysics(UShooterBotMovement* Comp, const FHitResult& Hit);
+	void SetPostLandedPhysics(UShooterUnrolledCppMovement* Comp, const FHitResult& Hit);
 
 	/** Handle a blocking impact. Calls ApplyImpactPhysicsForces for the hit, if bEnablePhysicsInteraction is true. */
-	void HandleImpact(UShooterBotMovement* Comp, const FHitResult& Hit, float TimeSlice=0.f, const FVector& MoveDelta = FVector::ZeroVector);
+	void HandleImpact(UShooterUnrolledCppMovement* Comp, const FHitResult& Hit, float TimeSlice=0.f, const FVector& MoveDelta = FVector::ZeroVector);
 
 	/**
 	 * Apply physics forces to the impacted component, if bEnablePhysicsInteraction is true.
@@ -416,10 +419,10 @@ protected:
 	 * @param ImpactAcceleration	Acceleration of the character at the time of impact
 	 * @param ImpactVelocity		Velocity of the character at the time of impact
 	 */
-	void ApplyImpactPhysicsForces(UShooterBotMovement* Comp, const FHitResult& Impact, const FVector& ImpactAcceleration, const FVector& ImpactVelocity);
+	void ApplyImpactPhysicsForces(UShooterUnrolledCppMovement* Comp, const FHitResult& Impact, const FVector& ImpactAcceleration, const FVector& ImpactVelocity);
 
 	/** Custom version that allows upwards slides when walking if the surface is walkable. */
-	void TwoWallAdjust(UShooterBotMovement* Comp, FVector& Delta, const FHitResult& Hit, const FVector& OldHitNormal) const;
+	void TwoWallAdjust(UShooterUnrolledCppMovement* Comp, FVector& Delta, const FHitResult& Hit, const FVector& OldHitNormal) const;
 
 	/**
 	 * Calculate slide vector along a surface.
@@ -431,9 +434,9 @@ protected:
 	 * @param Hit:		HitResult of the move that resulted in the slide.
 	 * @return			New deflected vector of movement.
 	 */
-	FVector ComputeSlideVector(UShooterBotMovement* Comp, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const;
+	FVector ComputeSlideVector(UShooterUnrolledCppMovement* Comp, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const;
 	/** ISPC: Transposed implementation of MovementComponent::ComputeSlideVector(). */
-	FVector Super_ComputeSlideVector(UShooterBotMovement* Comp, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const;
+	FVector Super_ComputeSlideVector(UShooterUnrolledCppMovement* Comp, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const;
 
 	/** 
 	 * Limit the slide vector when falling if the resulting slide might boost the character faster upwards.
@@ -444,7 +447,7 @@ protected:
 	 * @param Hit:			HitResult of the move that resulted in the slide.
 	 * @return:				New slide result.
 	 */
-	FVector HandleSlopeBoosting(UShooterBotMovement* Comp, const FVector& SlideResult, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const;
+	FVector HandleSlopeBoosting(UShooterUnrolledCppMovement* Comp, const FVector& SlideResult, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const;
 
 	/**
 	 * Limits the air control to use during falling movement, given an impact while falling.
@@ -457,7 +460,7 @@ protected:
 	 * @return Modified air control acceleration to use during falling movement.
 	 * @see PhysFalling()
 	 */
-	FVector LimitAirControl(UShooterBotMovement* Comp, float DeltaTime, const FVector& FallAcceleration, const FHitResult& HitResult, bool bCheckForValidLandingSpot);
+	FVector LimitAirControl(UShooterUnrolledCppMovement* Comp, float DeltaTime, const FVector& FallAcceleration, const FHitResult& HitResult, bool bCheckForValidLandingSpot);
 
 	/**
 	 * Use velocity requested by path following to compute a requested acceleration and speed.
@@ -473,9 +476,9 @@ protected:
 	 * @param OutRequestedSpeed		Speed of resulting velocity request, which can affect the max speed allowed by movement.
 	 * @return Whether there is a requested velocity and acceleration, resulting in valid OutAcceleration and OutRequestedSpeed values.
 	 */
-	bool ApplyRequestedMove(UShooterBotMovement* Comp, float DeltaTime, float MaxAccel, float MaxSpeed, float Friction, float BrakingDeceleration, FVector& OutAcceleration, float& OutRequestedSpeed);
+	bool ApplyRequestedMove(UShooterUnrolledCppMovement* Comp, float DeltaTime, float MaxAccel, float MaxSpeed, float Friction, float BrakingDeceleration, FVector& OutAcceleration, float& OutRequestedSpeed);
 
 protected:
 	UPROPERTY()
-	TArray<UShooterBotMovement*> Components;
+	TArray<UShooterUnrolledCppMovement*> Components;
 };
