@@ -14,6 +14,9 @@ class UShooterUnrolledCppMovement : public UShooterCharacterMovement
 public:
 	virtual void InitializeComponent() override;
 	virtual void UninitializeComponent() override;
+	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction) override;
+
+	virtual void VisualizeMovement() const override;
 
 	/** Perform movement on an autonomous client */
 	virtual void PerformMovement(float DeltaTime) override;
