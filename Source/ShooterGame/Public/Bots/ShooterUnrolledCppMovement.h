@@ -79,6 +79,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
 	void SetMovementMode(UShooterUnrolledCppMovement* Comp, EMovementMode NewMovementMode, uint8 NewCustomMode = 0);
 
+	/**
+	 * Set movement mode to use when returning to walking movement (either MOVE_Walking or MOVE_NavWalking).
+	 * If movement mode is currently one of Walking or NavWalking, this will also change the current movement mode (via SetMovementMode())
+	 * if the new mode is not the current ground mode.
+	 * 
+	 * @param  NewGroundMovementMode New ground movement mode. Must be either MOVE_Walking or MOVE_NavWalking, other values are ignored.
+	 * @see GroundMovementMode
+	 */
+	void SetGroundMovementMode(UShooterUnrolledCppMovement* Comp, EMovementMode NewGroundMovementMode);
+
 	/** Set movement mode to the default based on the current physics volume. */
 	void SetDefaultMovementMode(UShooterUnrolledCppMovement* Comp);
 
@@ -106,13 +116,56 @@ public:
 	void NotifyBumpedPawn(UShooterUnrolledCppMovement* Comp, APawn* BumpedPawn);
 	//End UPawnMovementComponent Interface
 
+	/** Stops movement immediately (zeroes velocity, usually zeros acceleration for components with acceleration). */
+	UFUNCTION(BlueprintCallable, Category="Components|Movement")
+	void StopMovementImmediately(UShooterUnrolledCppMovement* Comp);
+
+	/** Stops movement immediately (reset velocity) but keeps following current path */
+	UFUNCTION(BlueprintCallable, Category="Components|Movement")
+	void StopMovementKeepPathing(UShooterUnrolledCppMovement* Comp);
+
 	/** @return Maximum acceleration for the current state. */
 	UFUNCTION(BlueprintCallable, Category = "Pawn|Components|CharacterMovement")
 	float GetMinAnalogSpeed(UShooterUnrolledCppMovement* Comp) const;
 
+	/** @return whether this pawn is currently allowed to walk off ledges */
+	bool CanWalkOffLedges(UShooterUnrolledCppMovement* Comp) const;
+
+	/** 
+	 * @param Delta is the current move delta (which ended up going over a ledge).
+	 * @return new delta which moves along the ledge
+	 */
+	FVector GetLedgeMove(UShooterUnrolledCppMovement* Comp, const FVector& OldLocation, const FVector& Delta, const FVector& GravDir) const;
+
 	/** @return The distance from the edge of the capsule within which we don't allow the character to perch on the edge of a surface. */
 	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
 	float GetPerchRadiusThreshold(UShooterUnrolledCppMovement* Comp) const;
+
+	/**
+	 * Checks if new capsule size fits (no encroachment), and call CharacterOwner->OnStartCrouch() if successful.
+	 * In general you should set bWantsToCrouch instead to have the crouch persist during movement, or just use the crouch functions on the owning Character.
+	 * @param	bClientSimulation	true when called when bIsCrouched is replicated to non owned clients, to update collision cylinder and offset.
+	 */
+	void Crouch(UShooterUnrolledCppMovement* Comp, bool bClientSimulation = false);
+	
+	/**
+	 * Checks if default capsule size fits (no encroachment), and trigger OnEndCrouch() on the owner if successful.
+	 * @param	bClientSimulation	true when called when bIsCrouched is replicated to non owned clients, to update collision cylinder and offset.
+	 */
+	void UnCrouch(UShooterUnrolledCppMovement* Comp, bool bClientSimulation = false);
+
+	/** @return true if the character is allowed to crouch in the current state. By default it is allowed when walking or falling, if CanEverCrouch() is true. */
+	bool CanCrouchInCurrentState(UShooterUnrolledCppMovement* Comp) const;
+
+	/** @return true if there is a suitable floor SideStep from current position. */
+	bool CheckLedgeDirection(UShooterUnrolledCppMovement* Comp, const FVector& OldLocation, const FVector& SideStep, const FVector& GravDir) const;
+
+	/**
+	 * Returns the radius within which we can stand on the edge of a surface without falling (if this is a walkable surface).
+	 * Simply computed as the capsule radius minus the result of GetPerchRadiusThreshold().
+	 */
+	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
+	float GetValidPerchRadius(UShooterUnrolledCppMovement* Comp) const;
 
 	/**
 	 * Returns true if the current velocity is exceeding the given max speed (usually the result of GetMaxSpeed()), within a small error tolerance.
@@ -251,11 +304,45 @@ protected:
 		const struct FCollisionResponseParams& ResponseParam
 		) const;
 
+	/** Check if pawn is falling */
+	bool CheckFall(UShooterUnrolledCppMovement* Comp, const FFindFloorResult& OldFloor, const FHitResult& Hit, const FVector& Delta, const FVector& OldLocation, float remainingTime, float timeTick, int32 Iterations, bool bMustJump);
+
 	/** 
 	 *  Revert to previous position OldLocation, return to being based on OldBase.
 	 *  if bFailMove, stop movement and notify controller
 	 */	
 	void RevertMove(UShooterUnrolledCppMovement* Comp, const FVector& OldLocation, UPrimitiveComponent* OldBase, const FVector& InOldBaseLocation, const FFindFloorResult& OldFloor, bool bFailMove);
+
+	/** Perform rotation over deltaTime */
+	void PhysicsRotation(UShooterUnrolledCppMovement* Comp, float DeltaTime);
+
+	/** if true, DesiredRotation will be restricted to only Yaw component in PhysicsRotation() */
+	bool ShouldRemainVertical(UShooterUnrolledCppMovement* Comp) const;
+
+	/**
+	 * Compute a vector of movement, given a delta and a hit result of the surface we are on.
+	 *
+	 * @param Delta:				Attempted movement direction
+	 * @param RampHit:				Hit result of sweep that found the ramp below the capsule
+	 * @param bHitFromLineTrace:	Whether the floor trace came from a line trace
+	 *
+	 * @return If on a walkable surface, this returns a vector that moves parallel to the surface. The magnitude may be scaled if bMaintainHorizontalGroundVelocity is true.
+	 * If a ramp vector can't be computed, this will just return Delta.
+	 */
+	FVector ComputeGroundMovementDelta(UShooterUnrolledCppMovement* Comp, const FVector& Delta, const FHitResult& RampHit, const bool bHitFromLineTrace) const;
+
+	/**
+	 * Move along the floor, using CurrentFloor and ComputeGroundMovementDelta() to get a movement direction.
+	 * If a second walkable surface is hit, it will also be moved along using the same approach.
+	 *
+	 * @param InVelocity:			Velocity of movement
+	 * @param DeltaSeconds:			Time over which movement occurs
+	 * @param OutStepDownResult:	[Out] If non-null, and a floor check is performed, this will be updated to reflect that result.
+	 */
+	void MoveAlongFloor(UShooterUnrolledCppMovement* Comp, const FVector& InVelocity, float DeltaSeconds, UCharacterMovementComponent::FStepDownResult* OutStepDownResult = nullptr);
+
+	/** Notification that the character is stuck in geometry.  Only called during walking movement. */
+	void OnCharacterStuckInGeometry(UShooterUnrolledCppMovement* Comp, const FHitResult* Hit);
 
 	/**
 	 * Adjusts velocity when walking so that Z velocity is zero.
@@ -268,6 +355,15 @@ protected:
 
 	/** Overridden to set bJustTeleported to true, so we don't make incorrect velocity calculations based on adjusted movement. */
 	bool ResolvePenetration(UShooterUnrolledCppMovement* Comp, const FVector& Adjustment, const FHitResult& Hit, const FQuat& NewRotation);
+
+	/**
+	 * Check if the result of a sweep test (passed in InHit) might be a valid location to perch, in which case we should use ComputePerchResult to validate the location.
+	 * @see ComputePerchResult
+	 * @param InHit:			Result of the last sweep test before this query.
+	 * @param bCheckRadius:		If true, only allow the perch test if the impact point is outside the radius returned by GetValidPerchRadius().
+	 * @return Whether perching may be possible, such that ComputePerchResult can return a valid result.
+	 */
+	bool ShouldComputePerchResult(UShooterUnrolledCppMovement* Comp, const FHitResult& InHit, bool bCheckRadius = true) const;
 
 	/**
 	 * Compute the sweep result of the smaller capsule with radius specified by GetValidPerchRadius(),
@@ -293,6 +389,20 @@ protected:
 	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
 	UPrimitiveComponent* GetMovementBase(UShooterUnrolledCppMovement* Comp) const;
 
+	/** @return true if we can step up on the actor in the given FHitResult. */
+	bool CanStepUp(UShooterUnrolledCppMovement* Comp, const FHitResult& Hit) const;
+
+	/** 
+	 * Move up steps or slope. Does nothing and returns false if CanStepUp(Hit) returns false.
+	 *
+	 * @param GravDir			Gravity vector direction (assumed normalized or zero)
+	 * @param Delta				Requested move
+	 * @param Hit				[In] The hit before the step up.
+	 * @param OutStepDownResult	[Out] If non-null, a floor check will be performed if possible as part of the final step down, and it will be updated to reflect this result.
+	 * @return true if the step up was successful.
+	 */
+	bool StepUp(UShooterUnrolledCppMovement* Comp, const FVector& GravDir, const FVector& Delta, const FHitResult &Hit, struct UCharacterMovementComponent::FStepDownResult* OutStepDownResult = NULL);
+
 	/** Update the base of the character, which is the PrimitiveComponent we are standing on. */
 	void SetBase(UShooterUnrolledCppMovement* Comp, UPrimitiveComponent* NewBase, const FName BoneName = NAME_None, bool bNotifyActor=true);
 
@@ -310,6 +420,12 @@ protected:
 	/** Update controller's view rotation as pawn's base rotates */
 	void UpdateBasedRotation(UShooterUnrolledCppMovement* Comp, FRotator& FinalRotation, const FRotator& ReducedRotation);
 
+	/** Call SaveBaseLocation() if not deferring updates (bDeferUpdateBasedMovement is false). */
+	void MaybeSaveBaseLocation(UShooterUnrolledCppMovement* Comp);
+
+	/** Update OldBaseLocation and OldBaseQuat if there is a valid movement base, and store the relative location/rotation if necessary. Ignores bDeferUpdateBasedMovement and forces the update. */
+	void SaveBaseLocation(UShooterUnrolledCppMovement* Comp);
+
 	/**
 	 * Calls MoveUpdatedComponent(), handling initial penetrations by calling ResolvePenetration().
 	 * If this adjustment succeeds, the original movement will be attempted again.
@@ -319,6 +435,11 @@ protected:
 	bool SafeMoveUpdatedComponent(UShooterUnrolledCppMovement* Comp, const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap, const FVector& Delta, const FQuat& NewRotation,    bool bSweep, FHitResult& OutHit, ETeleportType Teleport = ETeleportType::None);
 
 	bool MoveUpdatedComponent(UShooterUnrolledCppMovement* Comp, const FVector& Delta, const FQuat& NewRotation, bool bSweep, FHitResult* OutHit = NULL, ETeleportType Teleport = ETeleportType::None);
+
+	/** Update ComponentVelocity of UpdatedComponent. This needs to be called by derived classes at the end of an update whenever Velocity has changed.	 */
+	void UpdateComponentVelocity(UShooterUnrolledCppMovement* Comp);
+
+	void SetUpdatedComponent(UShooterUnrolledCppMovement* Comp, USceneComponent* NewUpdatedComponent);
 
 	/**
 	 * Constrain a direction vector to the plane constraint, if enabled.
@@ -335,6 +456,10 @@ protected:
 	UFUNCTION(BlueprintCallable, Category="Components|Movement|Planar")
 	FVector ConstrainNormalToPlane(UShooterUnrolledCppMovement* Comp, FVector Normal) const;
 
+	/** Snap the updated component to the plane constraint, if enabled. */
+	UFUNCTION(BlueprintCallable, Category="Components|Movement|Planar")
+	void SnapUpdatedComponentToPlane(UShooterUnrolledCppMovement* Comp);
+
 	/** Return true if the given collision shape overlaps other geometry at the given location and rotation. The collision params are set by InitCollisionParams(). */
 	bool OverlapTest(UShooterUnrolledCppMovement* Comp, const FVector& Location, const FQuat& RotationQuat, const ECollisionChannel CollisionChannel, const FCollisionShape& CollisionShape, const AActor* IgnoreActor) const;
 
@@ -349,8 +474,28 @@ protected:
 	 */
 	FVector ConstrainAnimRootMotionVelocity(UShooterUnrolledCppMovement* Comp, const FVector& RootMotionVelocity, const FVector& CurrentVelocity) const;
 
+	/** @return true if we have Root Motion from any source to use in PerformMovement() physics. */
+	bool HasRootMotionSources(UShooterUnrolledCppMovement* Comp) const;
+
+	/** @return true if we have Root Motion from animation to use in PerformMovement() physics. 
+		Not valid outside of the scope of that function. Since RootMotion is extracted and used in it. */
+	bool HasAnimRootMotion(UShooterUnrolledCppMovement* Comp) const;
+
 	/** Slows towards stop. */
 	void ApplyVelocityBraking(UShooterUnrolledCppMovement* Comp, float DeltaTime, float Friction, float BrakingDeceleration);
+
+	/** Applies momentum accumulated through AddImpulse() and AddForce(), then clears those forces. Does *not* use ClearAccumulatedForces() since that would clear pending launch velocity as well. */
+	void ApplyAccumulatedForces(UShooterUnrolledCppMovement* Comp, float DeltaSeconds);
+
+	/** Clears forces accumulated through AddImpulse() and AddForce(), and also pending launch velocity. */
+	UFUNCTION(BlueprintCallable, Category="Pawn|Components|CharacterMovement")
+	void ClearAccumulatedForces(UShooterUnrolledCppMovement* Comp);
+
+	/** Update the character state in PerformMovement right before doing the actual position change */
+	void UpdateCharacterStateBeforeMovement(UShooterUnrolledCppMovement* Comp);
+
+	/** Update the character state in PerformMovement after the position change. Some rotation updates happen after this. */
+	void UpdateCharacterStateAfterMovement(UShooterUnrolledCppMovement* Comp);
 
 	/**
 	 * Get the lateral acceleration to use during falling movement. The Z component of the result is ignored.
@@ -421,6 +566,9 @@ protected:
 	 */
 	void ApplyImpactPhysicsForces(UShooterUnrolledCppMovement* Comp, const FHitResult& Impact, const FVector& ImpactAcceleration, const FVector& ImpactVelocity);
 
+	/** Custom version of SlideAlongSurface that handles different movement modes separately; namely during walking physics we might not want to slide up slopes. */
+	float SlideAlongSurface(UShooterUnrolledCppMovement* Comp, const FVector& Delta, float Time, const FVector& Normal, FHitResult& Hit, bool bHandleImpact);
+
 	/** Custom version that allows upwards slides when walking if the surface is walkable. */
 	void TwoWallAdjust(UShooterUnrolledCppMovement* Comp, FVector& Delta, const FHitResult& Hit, const FVector& OldHitNormal) const;
 
@@ -462,6 +610,21 @@ protected:
 	 */
 	FVector LimitAirControl(UShooterUnrolledCppMovement* Comp, float DeltaTime, const FVector& FallAcceleration, const FHitResult& HitResult, bool bCheckForValidLandingSpot);
 
+	/** @return how far to rotate character during the time interval DeltaTime. */
+	FRotator GetDeltaRotation(UShooterUnrolledCppMovement* Comp, float DeltaTime) const;
+
+	/**
+	  * Compute a target rotation based on current movement. Used by PhysicsRotation() when bOrientRotationToMovement is true.
+	  * Default implementation targets a rotation based on Acceleration.
+	  *
+	  * @param CurrentRotation	- Current rotation of the Character
+	  * @param DeltaTime		- Time slice for this movement
+	  * @param DeltaRotation	- Proposed rotation change based simply on DeltaTime * RotationRate
+	  *
+	  * @return The target rotation given current movement.
+	  */
+	FRotator ComputeOrientToMovementRotation(UShooterUnrolledCppMovement* Comp, const FRotator& CurrentRotation, float DeltaTime, FRotator& DeltaRotation) const;
+
 	/**
 	 * Use velocity requested by path following to compute a requested acceleration and speed.
 	 * This does not affect the Acceleration member variable, as that is used to indicate input acceleration.
@@ -477,6 +640,12 @@ protected:
 	 * @return Whether there is a requested velocity and acceleration, resulting in valid OutAcceleration and OutRequestedSpeed values.
 	 */
 	bool ApplyRequestedMove(UShooterUnrolledCppMovement* Comp, float DeltaTime, float MaxAccel, float MaxSpeed, float Friction, float BrakingDeceleration, FVector& OutAcceleration, float& OutRequestedSpeed);
+
+	/** Handle a pending launch during an update. Returns true if the launch was triggered. */
+	bool HandlePendingLaunch(UShooterUnrolledCppMovement* Comp);
+
+	/** Internal function to call OnMovementUpdated delegate on CharacterOwner. */
+	void CallMovementUpdateDelegate(UShooterUnrolledCppMovement* Comp, float DeltaSeconds, const FVector& OldLocation, const FVector& OldVelocity);
 
 protected:
 	UPROPERTY()

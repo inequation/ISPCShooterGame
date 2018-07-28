@@ -50,6 +50,7 @@ const float VERTICAL_SLOPE_NORMAL_Z = 0.001f; // Slope is vertical if Abs(Normal
 namespace CVars
 {
 	static IConsoleVariable* MoveIgnoreFirstBlockingOverlap = nullptr;
+	static IConsoleVariable* CharacterStuckWarningPeriod = nullptr;
 }
 
 static UShooterUnrolledCppMovementSystem* GetMovementSystem(UShooterUnrolledCppMovement* Comp)
@@ -141,6 +142,15 @@ static bool IsWithinEdgeTolerance(const FVector& CapsuleLocation, const FVector&
 	return DistFromCenterSq < ReducedRadiusSq;
 }
 
+static void InitCollisionParams(UShooterUnrolledCppMovement* Comp, FCollisionQueryParams &OutParams, FCollisionResponseParams& OutResponseParam)
+{
+	if (Comp->UpdatedPrimitive)
+	{
+		// TODO ISPC: foreach_active
+		Comp->UpdatedPrimitive->InitSweepCollisionParams(OutParams, OutResponseParam);
+	}
+}
+
 void FSystemTickFunction::ExecuteTick(float DeltaTime, ELevelTick TickType, ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent)
 {
 	check(IsValid(System));	// Apparently, we can get here from a spurious tick?
@@ -165,6 +175,7 @@ UShooterUnrolledCppMovementSystem::UShooterUnrolledCppMovementSystem(const FObje
 void UShooterUnrolledCppMovementSystem::Initialize()
 {
 	CVars::MoveIgnoreFirstBlockingOverlap = IConsoleManager::Get().FindConsoleVariable(TEXT("p.MoveIgnoreFirstBlockingOverlap"));
+	CVars::MoveIgnoreFirstBlockingOverlap = IConsoleManager::Get().FindConsoleVariable(TEXT("p.CharacterStuckWarningPeriod"));
 
 	TickFunction.System = this;
 	if (!IsTemplate())
@@ -198,6 +209,152 @@ void UShooterUnrolledCppMovementSystem::UnregisterComponent(UShooterUnrolledCppM
 	Components.Remove(Comp);
 }
 
+void UShooterUnrolledCppMovementSystem::SetUpdatedComponent(UShooterUnrolledCppMovement* Comp, USceneComponent* NewUpdatedComponent)
+{
+	if (NewUpdatedComponent)
+	{
+		const ACharacter* NewCharacterOwner = Cast<ACharacter>(NewUpdatedComponent->GetOwner());
+		if (NewCharacterOwner == NULL)
+		{
+			UE_LOG(LogUnrolledCharacterMovement, Error, TEXT("%s owned by %s must update a component owned by a Character"), *Comp->GetName(), *GetNameSafe(NewUpdatedComponent->GetOwner()));
+			return;
+		}
+
+		// check that UpdatedComponent is a Capsule
+		if (Cast<UCapsuleComponent>(NewUpdatedComponent) == NULL)
+		{
+			UE_LOG(LogUnrolledCharacterMovement, Error, TEXT("%s owned by %s must update a capsule component"), *Comp->GetName(), *GetNameSafe(NewUpdatedComponent->GetOwner()));
+			return;
+		}
+	}
+
+	if ( Comp->bMovementInProgress )
+	{
+#if 0	// TODO ISPC
+		unimplemented();
+#else
+		// failsafe to avoid crashes in CharacterMovement. 
+		Comp->bDeferUpdateMoveComponent = true;
+		Comp->DeferredUpdatedMoveComponent = NewUpdatedComponent;
+		return;
+#endif
+	}
+	Comp->bDeferUpdateMoveComponent = false;
+	Comp->DeferredUpdatedMoveComponent = NULL;
+
+	USceneComponent* OldUpdatedComponent = Comp->UpdatedComponent;
+	UPrimitiveComponent* OldPrimitive = Cast<UPrimitiveComponent>(Comp->UpdatedComponent);
+	if (IsValid(OldPrimitive) && OldPrimitive->OnComponentBeginOverlap.IsBound())
+	{
+#if 1	// TODO ISPC: Member is private.
+		unimplemented();
+#else
+		OldPrimitive->OnComponentBeginOverlap.RemoveDynamic(Comp, &UCharacterMovementComponent::CapsuleTouched);
+#endif
+	}
+	
+	{
+		// ISPC: Inlined call to UPawnMovementComponent::SetUpdatedComponent().
+		if (NewUpdatedComponent)
+		{
+			if (!ensureMsgf(Cast<APawn>(NewUpdatedComponent->GetOwner()), TEXT("%s must update a component owned by a Pawn"), *GetName()))
+			{
+				return;
+			}
+		}
+
+		{
+			// ISPC: Inlined call to UMovementComponent::SetUpdatedComponent().
+			if (Comp->UpdatedComponent && Comp->UpdatedComponent != NewUpdatedComponent)
+			{
+				Comp->UpdatedComponent->bShouldUpdatePhysicsVolume = false;
+				if (!Comp->UpdatedComponent->IsPendingKill())
+				{
+					Comp->UpdatedComponent->SetPhysicsVolume(NULL, true);
+					Comp->UpdatedComponent->PhysicsVolumeChangedDelegate.RemoveDynamic(Comp, &UMovementComponent::PhysicsVolumeChanged);
+				}
+
+				// remove from tick prerequisite
+				Comp->UpdatedComponent->PrimaryComponentTick.RemovePrerequisite(Comp, Comp->PrimaryComponentTick);
+			}
+
+			// Don't assign pending kill components, but allow those to null out previous UpdatedComponent.
+			Comp->UpdatedComponent = IsValid(NewUpdatedComponent) ? NewUpdatedComponent : NULL;
+			Comp->UpdatedPrimitive = Cast<UPrimitiveComponent>(Comp->UpdatedComponent);
+
+			// Assign delegates
+			if (Comp->UpdatedComponent && !Comp->UpdatedComponent->IsPendingKill())
+			{
+				Comp->UpdatedComponent->bShouldUpdatePhysicsVolume = true;
+				Comp->UpdatedComponent->PhysicsVolumeChangedDelegate.AddUniqueDynamic(Comp, &UMovementComponent::PhysicsVolumeChanged);
+
+	#if 0	// TODO ISPC
+				if (!Comp->bInOnRegister && !Comp->bInInitializeComponent)
+	#endif
+				{
+					// UpdateOverlaps() in component registration will take care of this.
+					Comp->UpdatedComponent->UpdatePhysicsVolume(true);
+				}
+
+				// force ticks after movement component updates
+				Comp->UpdatedComponent->PrimaryComponentTick.AddPrerequisite(Comp, Comp->PrimaryComponentTick);
+			}
+
+			Comp->UpdateTickRegistration();
+
+			if (Comp->bSnapToPlaneAtStart)
+			{
+				SnapUpdatedComponentToPlane(Comp);
+			}
+		}
+
+		Comp->PawnOwner = NewUpdatedComponent ? CastChecked<APawn>(NewUpdatedComponent->GetOwner()) : NULL;
+	}
+	Comp->CharacterOwner = Cast<ACharacter>(Comp->PawnOwner);
+
+	if (Comp->UpdatedComponent != OldUpdatedComponent)
+	{
+		ClearAccumulatedForces(Comp);
+	}
+
+	if (Comp->UpdatedComponent == NULL)
+	{
+		StopActiveMovement(Comp);
+	}
+
+	const bool bValidUpdatedPrimitive = IsValid(Comp->UpdatedPrimitive);
+
+	if (bValidUpdatedPrimitive && Comp->bEnablePhysicsInteraction)
+	{
+#if 1	// TODO ISPC: Member is private.
+		unimplemented();
+#else
+		Comp->UpdatedPrimitive->OnComponentBeginOverlap.AddUniqueDynamic(Comp, &UCharacterMovementComponent::CapsuleTouched);
+#endif
+	}
+
+#if 0	// TODO ISPC: Member is private.
+	if (Comp->bNeedsSweepWhileWalkingUpdate)
+	{
+		Comp->bSweepWhileNavWalking = bValidUpdatedPrimitive ? Comp->UpdatedPrimitive->bGenerateOverlapEvents : false;
+		Comp->bNeedsSweepWhileWalkingUpdate = false;
+	}
+#endif
+
+	if (Comp->bUseRVOAvoidance && IsValid(NewUpdatedComponent))
+	{
+#if 1	// TODO ISPC
+		unimplemented();
+#else
+		UAvoidanceManager* AvoidanceManager = GetWorld()->GetAvoidanceManager();
+		if (AvoidanceManager)
+		{
+			AvoidanceManager->RegisterMovementComponent(Comp, Comp->AvoidanceWeight);
+		}
+#endif
+	}
+}
+
 void UShooterUnrolledCppMovementSystem::PerformMovement(UShooterUnrolledCppMovement* Comp, float DeltaSeconds)
 {
 	SCOPE_CYCLE_COUNTER(STAT_CharacterMovementPerformMovement);
@@ -212,18 +369,22 @@ void UShooterUnrolledCppMovementSystem::PerformMovement(UShooterUnrolledCppMovem
 	{
 		if (!Comp->CharacterOwner->bClientUpdating && Comp->CharacterOwner->IsPlayingRootMotion() && Comp->CharacterOwner->GetMesh() && !Comp->CharacterOwner->bServerMoveIgnoreRootMotion)
 		{
+#if 1	// TODO ISPC
+			unimplemented();
+#else
 			// Consume root motion
 			Comp->TickCharacterPose(DeltaSeconds);
+#endif
 			Comp->RootMotionParams.Clear();
 			Comp->CurrentRootMotion.Clear();
 		}
 		// Clear pending physics forces
-		Comp->ClearAccumulatedForces();
+		ClearAccumulatedForces(Comp);
 		return;
 	}
 
 	// Force floor update if we've moved outside of CharacterMovement since last update.
-	Comp->bForceNextFloorCheck |= (Comp->IsMovingOnGround() && Comp->UpdatedComponent->GetComponentLocation() != Comp->LastUpdateLocation);
+	Comp->bForceNextFloorCheck |= (IsMovingOnGround(Comp) && Comp->UpdatedComponent->GetComponentLocation() != Comp->LastUpdateLocation);
 
 	// Update saved LastPreAdditiveVelocity with any external changes to character Velocity that happened since last update.
 	if (Comp->CurrentRootMotion.HasAdditiveVelocity())
@@ -258,9 +419,12 @@ void UShooterUnrolledCppMovementSystem::PerformMovement(UShooterUnrolledCppMovem
 		// This includes RootMotion sources that ended naturally.
 		// They might want to perform a clamp on velocity or an override, 
 		// so we want this to happen before ApplyAccumulatedForces and HandlePendingLaunch as to not clobber these.
-		const bool bHasRootMotionSources = Comp->HasRootMotionSources();
+		const bool bHasRootMotionSources = HasRootMotionSources(Comp);
 		if (bHasRootMotionSources && !Comp->CharacterOwner->bClientUpdating && !Comp->CharacterOwner->bServerMoveIgnoreRootMotion)
 		{
+#if 1	// TODO ISPC
+			unimplemented();
+#else
 			SCOPE_CYCLE_COUNTER(STAT_CharacterMovementRootMotionSourceCalculate);
 
 			const FVector VelocityBeforeCleanup = Comp->Velocity;
@@ -278,24 +442,26 @@ void UShooterUnrolledCppMovementSystem::PerformMovement(UShooterUnrolledCppMovem
 				}
 			}
 #endif
+#endif	// TODO ISPC
 		}
 
 		OldVelocity = Comp->Velocity;
 		OldLocation = Comp->UpdatedComponent->GetComponentLocation();
 
-		Comp->ApplyAccumulatedForces(DeltaSeconds);
+		ApplyAccumulatedForces(Comp, DeltaSeconds);
 
 		// Update the character state before we do our movement
-		Comp->UpdateCharacterStateBeforeMovement();
+		UpdateCharacterStateBeforeMovement(Comp);
 
 		if (Comp->MovementMode == MOVE_NavWalking && Comp->bWantsToLeaveNavWalking)
 		{
+			unimplemented();	// TODO ISPC
 			Comp->TryToLeaveNavWalking();
 		}
 
 		// Character::LaunchCharacter() has been deferred until now.
-		Comp->HandlePendingLaunch();
-		Comp->ClearAccumulatedForces();
+		HandlePendingLaunch(Comp);
+		ClearAccumulatedForces(Comp);
 
 #if ROOT_MOTION_DEBUG
 		if (RootMotionSourceDebug::CVarDebugRootMotionSources.GetValueOnAnyThread() == 1)
@@ -335,6 +501,9 @@ void UShooterUnrolledCppMovementSystem::PerformMovement(UShooterUnrolledCppMovem
 			// Animation root motion - If using animation RootMotion, tick animations before running physics.
 			if (Comp->CharacterOwner->IsPlayingRootMotion() && Comp->CharacterOwner->GetMesh())
 			{
+#if 1	// TODO ISPC
+				unimplemented();
+#else
 				Comp->TickCharacterPose(DeltaSeconds);
 
 				// Make sure animation didn't trigger an event that destroyed us
@@ -348,6 +517,7 @@ void UShooterUnrolledCppMovementSystem::PerformMovement(UShooterUnrolledCppMovem
 				{
 					Comp->CharacterOwner->ClientRootMotionParams = Comp->RootMotionParams;
 				}
+#endif
 			}
 
 			// Generates root motion to be used this frame from sources other than animation
@@ -364,17 +534,20 @@ void UShooterUnrolledCppMovementSystem::PerformMovement(UShooterUnrolledCppMovem
 		}
 
 		// Apply Root Motion to Velocity
-		if (Comp->CurrentRootMotion.HasOverrideVelocity() || Comp->HasAnimRootMotion())
+		if (Comp->CurrentRootMotion.HasOverrideVelocity() || HasAnimRootMotion(Comp))
 		{
+#if 1	// TODO ISPC
+			unimplemented();
+#else
 			// Animation root motion overrides Velocity and currently doesn't allow any other root motion sources
-			if (Comp->HasAnimRootMotion())
+			if (HasAnimRootMotion(Comp))
 			{
 				// Convert to world space (animation root motion is always local)
 				USkeletalMeshComponent * SkelMeshComp = Comp->CharacterOwner->GetMesh();
 				if (SkelMeshComp)
 				{
 					// Convert Local Space Root Motion to world space. Do it right before used by physics to make sure we use up to date transforms, as translation is relative to rotation.
-					Comp->RootMotionParams.Set(Comp->ConvertLocalRootMotionToWorld(Comp->RootMotionParams.GetRootMotionTransform()));
+					Comp->RootMotionParams.Set(ConvertLocalRootMotionToWorld(Comp, Comp->RootMotionParams.GetRootMotionTransform()));
 				}
 
 				// Then turn root motion to velocity to be used by various physics modes.
@@ -416,6 +589,7 @@ void UShooterUnrolledCppMovementSystem::PerformMovement(UShooterUnrolledCppMovem
 #endif
 				}
 			}
+#endif	// TODO ISPC
 		}
 
 #if ROOT_MOTION_DEBUG
@@ -442,16 +616,19 @@ void UShooterUnrolledCppMovementSystem::PerformMovement(UShooterUnrolledCppMovem
 		}
 
 		// Update character state based on change from movement
-		Comp->UpdateCharacterStateAfterMovement();
+		UpdateCharacterStateAfterMovement(Comp);
 
-		if ((Comp->bAllowPhysicsRotationDuringAnimRootMotion || !Comp->HasAnimRootMotion()) && !Comp->CharacterOwner->IsMatineeControlled())
+		if ((Comp->bAllowPhysicsRotationDuringAnimRootMotion || !HasAnimRootMotion(Comp)) && !Comp->CharacterOwner->IsMatineeControlled())
 		{
-			Comp->PhysicsRotation(DeltaSeconds);
+			PhysicsRotation(Comp, DeltaSeconds);
 		}
 
 		// Apply Root Motion rotation after movement is complete.
-		if (Comp->HasAnimRootMotion())
+		if (HasAnimRootMotion(Comp))
 		{
+#if 1	// TODO ISPC
+			unimplemented();
+#else
 			const FQuat OldActorRotationQuat = Comp->UpdatedComponent->GetComponentQuat();
 			const FQuat RootMotionRotationQuat = Comp->RootMotionParams.GetRootMotionTransform().GetRotation();
 			if (!RootMotionRotationQuat.IsIdentity())
@@ -487,22 +664,26 @@ void UShooterUnrolledCppMovementSystem::PerformMovement(UShooterUnrolledCppMovem
 
 			// Root Motion has been used, clear
 			Comp->RootMotionParams.Clear();
+#endif	// TODO ISPC
 		}
 
 		// consume path following requested velocity
 		Comp->bHasRequestedVelocity = false;
 
+#if 0	// TODO ISPC: This is an empty method, don't call at all for now.
 		Comp->OnMovementUpdated(DeltaSeconds, OldLocation, OldVelocity);
+#endif
 	} // End scoped movement update
 
 	// Call external post-movement events. These happen after the scoped movement completes in case the events want to use the current state of overlaps etc.
-	Comp->CallMovementUpdateDelegate(DeltaSeconds, OldLocation, OldVelocity);
+	CallMovementUpdateDelegate(Comp, DeltaSeconds, OldLocation, OldVelocity);
 
-	Comp->MaybeSaveBaseLocation();
-	Comp->UpdateComponentVelocity();
+	MaybeSaveBaseLocation(Comp);
+	UpdateComponentVelocity(Comp);
 
 	const bool bHasAuthority = Comp->CharacterOwner && Comp->CharacterOwner->HasAuthority();
 
+	// TODO ISPC: Uniformize UNetDriver::IsAdaptiveNetUpdateFrequencyEnabled() and foreach_active this entire if.
 	// If we move we want to avoid a long delay before replication catches up to notice this change, especially if it's throttling our rate.
 	if (bHasAuthority && UNetDriver::IsAdaptiveNetUpdateFrequencyEnabled() && Comp->UpdatedComponent)
 	{
@@ -552,6 +733,44 @@ void UShooterUnrolledCppMovementSystem::Tick(float DeltaSeconds)
 	}
 }
 
+void UShooterUnrolledCppMovementSystem::CallMovementUpdateDelegate(UShooterUnrolledCppMovement* Comp, float DeltaTime, const FVector& OldLocation, const FVector& OldVelocity)
+{
+	SCOPE_CYCLE_COUNTER(STAT_CharMoveUpdateDelegate);
+
+	// Update component velocity in case events want to read it
+	UpdateComponentVelocity(Comp);
+
+	// Delegate (for blueprints)
+	if (Comp->CharacterOwner)
+	{
+		// TODO ISPC: foreach_active
+		Comp->CharacterOwner->OnCharacterMovementUpdated.Broadcast(DeltaTime, OldLocation, OldVelocity);
+	}
+}
+
+void UShooterUnrolledCppMovementSystem::UpdateCharacterStateBeforeMovement(UShooterUnrolledCppMovement* Comp)
+{
+	// Check for a change in crouch state. Players toggle crouch by changing bWantsToCrouch.
+	const bool bAllowedToCrouch = CanCrouchInCurrentState(Comp);
+	if ((!bAllowedToCrouch || !Comp->bWantsToCrouch) && IsCrouching(Comp))
+	{
+		UnCrouch(Comp, false);
+	}
+	else if (Comp->bWantsToCrouch && bAllowedToCrouch && !IsCrouching(Comp))
+	{
+		Crouch(Comp, false);
+	}
+}
+
+void UShooterUnrolledCppMovementSystem::UpdateCharacterStateAfterMovement(UShooterUnrolledCppMovement* Comp)
+{
+	// Uncrouch if no longer allowed to be crouched
+	if (IsCrouching(Comp) && !CanCrouchInCurrentState(Comp))
+	{
+		UnCrouch(Comp, false);
+	}
+}
+
 void UShooterUnrolledCppMovementSystem::StartNewPhysics(UShooterUnrolledCppMovement* Comp, float deltaTime, int32 Iterations)
 {
 	if ((deltaTime < UCharacterMovementComponent::MIN_TICK_TIME) || (Iterations >= Comp->MaxSimulationIterations) || !HasValidData(Comp))
@@ -592,14 +811,14 @@ void UShooterUnrolledCppMovementSystem::StartNewPhysics(UShooterUnrolledCppMovem
 		break;
 	default:
 		UE_LOG(LogUnrolledCharacterMovement, Warning, TEXT("%s has unsupported movement mode %d"), *Comp->CharacterOwner->GetName(), int32(Comp->MovementMode));
-		Comp->SetMovementMode(MOVE_None);
+		SetMovementMode(Comp, MOVE_None);
 		break;
 	}
 
 	Comp->bMovementInProgress = bSavedMovementInProgress;
 	if (Comp->bDeferUpdateMoveComponent)
 	{
-		Comp->SetUpdatedComponent(Comp->DeferredUpdatedMoveComponent);
+		SetUpdatedComponent(Comp, Comp->DeferredUpdatedMoveComponent);
 	}
 }
 
@@ -709,6 +928,16 @@ float UShooterUnrolledCppMovementSystem::GetPerchRadiusThreshold(UShooterUnrolle
 	return FMath::Max(0.f, Comp->PerchRadiusThreshold);
 }
 
+float UShooterUnrolledCppMovementSystem::GetValidPerchRadius(UShooterUnrolledCppMovement* Comp) const
+{
+	if (Comp->CharacterOwner)
+	{
+		const float PawnRadius = Comp->CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleRadius();
+		return FMath::Clamp(PawnRadius - GetPerchRadiusThreshold(Comp), 0.1f, PawnRadius);
+	}
+	return 0.f;
+}
+
 bool UShooterUnrolledCppMovementSystem::IsInWater(UShooterUnrolledCppMovement* Comp) const
 {
 	const APhysicsVolume* PhysVolume = GetPhysicsVolume(Comp);
@@ -790,7 +1019,7 @@ FVector UShooterUnrolledCppMovementSystem::GetFallingLateralAcceleration(UShoote
 	FVector FallAcceleration = FVector(Comp->Acceleration.X, Comp->Acceleration.Y, 0.f);
 
 	// bound acceleration, falling object has minimal ability to impact acceleration
-	if (!Comp->HasAnimRootMotion() && FallAcceleration.SizeSquared2D() > 0.f)
+	if (!HasAnimRootMotion(Comp) && FallAcceleration.SizeSquared2D() > 0.f)
 	{
 		FallAcceleration = GetAirControl(Comp, DeltaTime, Comp->AirControl, FallAcceleration);
 		FallAcceleration = FallAcceleration.GetClampedToMaxSize(GetMaxAcceleration(Comp));
@@ -830,7 +1059,7 @@ float UShooterUnrolledCppMovementSystem::GetSimulationTimeStep(UShooterUnrolledC
 void UShooterUnrolledCppMovementSystem::CalcVelocity(UShooterUnrolledCppMovement* Comp, float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration)
 {
 	// Do not update velocity when using root motion or when SimulatedProxy - SimulatedProxy are repped their Velocity
-	if (!HasValidData(Comp) || Comp->HasAnimRootMotion() || DeltaTime < UCharacterMovementComponent::MIN_TICK_TIME || (Comp->CharacterOwner && Comp->CharacterOwner->Role == ROLE_SimulatedProxy))
+	if (!HasValidData(Comp) || HasAnimRootMotion(Comp) || DeltaTime < UCharacterMovementComponent::MIN_TICK_TIME || (Comp->CharacterOwner && Comp->CharacterOwner->Role == ROLE_SimulatedProxy))
 	{
 		return;
 	}
@@ -924,7 +1153,7 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 		return;
 	}
 
-	if (!Comp->CharacterOwner || (!Comp->CharacterOwner->Controller && !Comp->bRunPhysicsWithNoController && !Comp->HasAnimRootMotion() && !Comp->CurrentRootMotion.HasOverrideVelocity() && (Comp->CharacterOwner->Role != ROLE_SimulatedProxy)))
+	if (!Comp->CharacterOwner || (!Comp->CharacterOwner->Controller && !Comp->bRunPhysicsWithNoController && !HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity() && (Comp->CharacterOwner->Role != ROLE_SimulatedProxy)))
 	{
 		Comp->Acceleration = FVector::ZeroVector;
 		Comp->Velocity = FVector::ZeroVector;
@@ -933,7 +1162,7 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 
 	if (!Comp->UpdatedComponent->IsQueryCollisionEnabled())
 	{
-		Comp->SetMovementMode(MOVE_Walking);
+		SetMovementMode(Comp, MOVE_Walking);
 		return;
 	}
 
@@ -945,15 +1174,15 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 	float remainingTime = deltaTime;
 
 	// Perform the move
-	while ((remainingTime >= UCharacterMovementComponent::MIN_TICK_TIME) && (Iterations < Comp->MaxSimulationIterations) && Comp->CharacterOwner && (Comp->CharacterOwner->Controller || Comp->bRunPhysicsWithNoController || Comp->HasAnimRootMotion() || Comp->CurrentRootMotion.HasOverrideVelocity() || (Comp->CharacterOwner->Role == ROLE_SimulatedProxy)))
+	while ((remainingTime >= UCharacterMovementComponent::MIN_TICK_TIME) && (Iterations < Comp->MaxSimulationIterations) && Comp->CharacterOwner && (Comp->CharacterOwner->Controller || Comp->bRunPhysicsWithNoController || HasAnimRootMotion(Comp) || Comp->CurrentRootMotion.HasOverrideVelocity() || (Comp->CharacterOwner->Role == ROLE_SimulatedProxy)))
 	{
 		Iterations++;
 		Comp->bJustTeleported = false;
-		const float timeTick = Comp->GetSimulationTimeStep(remainingTime, Iterations);
+		const float timeTick = GetSimulationTimeStep(Comp, remainingTime, Iterations);
 		remainingTime -= timeTick;
 
 		// Save current values
-		UPrimitiveComponent * const OldBase = Comp->GetMovementBase();
+		UPrimitiveComponent * const OldBase = GetMovementBase(Comp);
 		const FVector PreviousBaseLocation = (OldBase != NULL) ? OldBase->GetComponentLocation() : FVector::ZeroVector;
 		const FVector OldLocation = Comp->UpdatedComponent->GetComponentLocation();
 		const FFindFloorResult OldFloor = Comp->CurrentFloor;
@@ -966,9 +1195,9 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 		Comp->Acceleration.Z = 0.f;
 
 		// Apply acceleration
-		if (!Comp->HasAnimRootMotion() && !Comp->CurrentRootMotion.HasOverrideVelocity())
+		if (!HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity())
 		{
-			CalcVelocity(Comp, timeTick, Comp->GroundFriction, false, Comp->GetMaxBrakingDeceleration());
+			CalcVelocity(Comp, timeTick, Comp->GroundFriction, false, GetMaxBrakingDeceleration(Comp));
 			checkCode(ensureMsgf(!Comp->Velocity.ContainsNaN(), TEXT("PhysWalking: Velocity contains NaN after CalcVelocity (%s)\n%s"), *GetPathNameSafe(Comp), *Comp->Velocity.ToString()));
 		}
 
@@ -996,7 +1225,7 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 		else
 		{
 			// try to move forward
-			Comp->MoveAlongFloor(MoveVelocity, timeTick, &StepDownResult);
+			MoveAlongFloor(Comp, MoveVelocity, timeTick, &StepDownResult);
 
 			if (IsFalling(Comp))
 			{
@@ -1010,7 +1239,7 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 				StartNewPhysics(Comp, remainingTime, Iterations);
 				return;
 			}
-			else if (Comp->IsSwimming()) //just entered water
+			else if (IsSwimming(Comp)) //just entered water
 			{
 				StartSwimming(Comp, OldLocation, OldVelocity, timeTick, remainingTime, Iterations);
 				return;
@@ -1029,12 +1258,12 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 		}
 
 		// check for ledges here
-		const bool bCheckLedges = !Comp->CanWalkOffLedges();
+		const bool bCheckLedges = !CanWalkOffLedges(Comp);
 		if (bCheckLedges && !Comp->CurrentFloor.IsWalkableFloor())
 		{
 			// calculate possible alternate movement
 			const FVector GravDir = FVector(0.f, 0.f, -1.f);
-			const FVector NewDelta = bTriedLedgeMove ? FVector::ZeroVector : Comp->GetLedgeMove(OldLocation, Delta, GravDir);
+			const FVector NewDelta = bTriedLedgeMove ? FVector::ZeroVector : GetLedgeMove(Comp, OldLocation, Delta, GravDir);
 			if (!NewDelta.IsZero())
 			{
 				// first revert this move
@@ -1053,7 +1282,7 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 				// see if it is OK to jump
 				// @todo collision : only thing that can be problem is that oldbase has world collision on
 				bool bMustJump = bZeroDelta || (OldBase == NULL || (!OldBase->IsQueryCollisionEnabled() && MovementBaseUtility::IsDynamicBase(OldBase)));
-				if ((bMustJump || !bCheckedFall) && Comp->CheckFall(OldFloor, Comp->CurrentFloor.HitResult, Delta, OldLocation, remainingTime, timeTick, Iterations, bMustJump))
+				if ((bMustJump || !bCheckedFall) && CheckFall(Comp, OldFloor, Comp->CurrentFloor.HitResult, Delta, OldLocation, remainingTime, timeTick, Iterations, bMustJump))
 				{
 					return;
 				}
@@ -1073,7 +1302,7 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 				if (Comp->ShouldCatchAir(OldFloor, Comp->CurrentFloor))
 				{
 					Comp->CharacterOwner->OnWalkingOffLedge(OldFloor.HitResult.ImpactNormal, OldFloor.HitResult.Normal, OldLocation, timeTick);
-					if (Comp->IsMovingOnGround())
+					if (IsMovingOnGround(Comp))
 					{
 						// If still walking, then fall. If not, assume the user set a different mode they want to keep.
 						StartFalling(Comp, Iterations, remainingTime, timeTick, Delta, OldLocation);
@@ -1096,7 +1325,7 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 			}
 
 			// check if just entered water
-			if (Comp->IsSwimming())
+			if (IsSwimming(Comp))
 			{
 				StartSwimming(Comp, OldLocation, Comp->Velocity, timeTick, remainingTime, Iterations);
 				return;
@@ -1106,7 +1335,7 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 			if (!Comp->CurrentFloor.IsWalkableFloor() && !Comp->CurrentFloor.HitResult.bStartPenetrating)
 			{
 				const bool bMustJump = Comp->bJustTeleported || bZeroDelta || (OldBase == NULL || (!OldBase->IsQueryCollisionEnabled() && MovementBaseUtility::IsDynamicBase(OldBase)));
-				if ((bMustJump || !bCheckedFall) && Comp->CheckFall(OldFloor, Comp->CurrentFloor.HitResult, Delta, OldLocation, remainingTime, timeTick, Iterations, bMustJump))
+				if ((bMustJump || !bCheckedFall) && CheckFall(Comp, OldFloor, Comp->CurrentFloor.HitResult, Delta, OldLocation, remainingTime, timeTick, Iterations, bMustJump))
 				{
 					return;
 				}
@@ -1116,10 +1345,10 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 
 
 		// Allow overlap events and such to change physics state and velocity
-		if (Comp->IsMovingOnGround())
+		if (IsMovingOnGround(Comp))
 		{
 			// Make velocity reflect actual move
-			if (!Comp->bJustTeleported && !Comp->HasAnimRootMotion() && !Comp->CurrentRootMotion.HasOverrideVelocity() && timeTick >= UCharacterMovementComponent::MIN_TICK_TIME)
+			if (!Comp->bJustTeleported && !HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity() && timeTick >= UCharacterMovementComponent::MIN_TICK_TIME)
 			{
 				// TODO-RootMotionSource: Allow this to happen during partial override Velocity, but only set allowed axes?
 				Comp->Velocity = (Comp->UpdatedComponent->GetComponentLocation() - OldLocation) / timeTick;
@@ -1134,7 +1363,7 @@ void UShooterUnrolledCppMovementSystem::PhysWalking(UShooterUnrolledCppMovement*
 		}
 	}
 
-	if (Comp->IsMovingOnGround())
+	if (IsMovingOnGround(Comp))
 	{
 		MaintainHorizontalGroundVelocity(Comp);
 	}
@@ -1151,7 +1380,7 @@ void UShooterUnrolledCppMovementSystem::PhysNavWalking(UShooterUnrolledCppMoveme
 		return;
 	}
 
-	if ((!Comp->CharacterOwner || !Comp->CharacterOwner->Controller) && !Comp->bRunPhysicsWithNoController && !Comp->HasAnimRootMotion() && !Comp->CurrentRootMotion.HasOverrideVelocity())
+	if ((!Comp->CharacterOwner || !Comp->CharacterOwner->Controller) && !Comp->bRunPhysicsWithNoController && !HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity())
 	{
 		Comp->Acceleration = FVector::ZeroVector;
 		Comp->Velocity = FVector::ZeroVector;
@@ -1166,7 +1395,7 @@ void UShooterUnrolledCppMovementSystem::PhysNavWalking(UShooterUnrolledCppMoveme
 
 	//bound acceleration
 	Comp->Acceleration.Z = 0.f;
-	if (!Comp->HasAnimRootMotion() && !Comp->CurrentRootMotion.HasOverrideVelocity())
+	if (!HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity())
 	{
 		CalcVelocity(Comp, deltaTime, Comp->GroundFriction, false, GetMaxBrakingDeceleration(Comp));
 		checkCode(ensureMsgf(!Comp->Velocity.ContainsNaN(), TEXT("PhysNavWalking: Velocity contains NaN after CalcVelocity (%s)\n%s"), *GetPathNameSafe(Comp), *Comp->Velocity.ToString()));
@@ -1263,7 +1492,7 @@ void UShooterUnrolledCppMovementSystem::PhysNavWalking(UShooterUnrolledCppMoveme
 		}
 
 		// Update velocity to reflect actual move
-		if (!bJustTeleported && !Comp->HasAnimRootMotion() && !Comp->CurrentRootMotion.HasVelocity())
+		if (!bJustTeleported && !HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasVelocity())
 		{
 			Comp->Velocity = (GetActorFeetLocation(Comp) - OldLocation) / deltaTime;
 			MaintainHorizontalGroundVelocity(Comp);
@@ -1323,7 +1552,7 @@ void UShooterUnrolledCppMovementSystem::PhysFalling(UShooterUnrolledCppMovement*
 		FVector VelocityNoAirControl = Comp->Velocity;
 
 		// Apply input
-		if (!Comp->HasAnimRootMotion() && !Comp->CurrentRootMotion.HasOverrideVelocity())
+		if (!HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity())
 		{
 			const float MaxDecel = GetMaxBrakingDeceleration(Comp);
 			// Compute VelocityNoAirControl
@@ -1442,7 +1671,7 @@ void UShooterUnrolledCppMovementSystem::PhysFalling(UShooterUnrolledCppMovement*
 				if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !Comp->bJustTeleported)
 				{
 					const FVector NewVelocity = (Delta / subTimeTickRemaining);
-					Comp->Velocity = Comp->HasAnimRootMotion() && !Comp->CurrentRootMotion.HasOverrideVelocity() ? FVector(Comp->Velocity.X, Comp->Velocity.Y, NewVelocity.Z) : NewVelocity;
+					Comp->Velocity = HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity() ? FVector(Comp->Velocity.X, Comp->Velocity.Y, NewVelocity.Z) : NewVelocity;
 				}
 
 				if (subTimeTickRemaining > KINDA_SMALL_NUMBER && (Delta | Adjusted) > 0.f)
@@ -1498,7 +1727,7 @@ void UShooterUnrolledCppMovementSystem::PhysFalling(UShooterUnrolledCppMovement*
 						if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !Comp->bJustTeleported)
 						{
 							const FVector NewVelocity = (Delta / subTimeTickRemaining);
-							Comp->Velocity = Comp->HasAnimRootMotion() && !Comp->CurrentRootMotion.HasOverrideVelocity() ? FVector(Comp->Velocity.X, Comp->Velocity.Y, NewVelocity.Z) : NewVelocity;
+							Comp->Velocity = HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity() ? FVector(Comp->Velocity.X, Comp->Velocity.Y, NewVelocity.Z) : NewVelocity;
 						}
 
 						// bDitch=true means that pawn is straddling two slopes, neither of which he can stand on
@@ -1559,10 +1788,14 @@ void UShooterUnrolledCppMovementSystem::SetMovementMode(UShooterUnrolledCppMovem
 	// If trying to use NavWalking but there is no navmesh, use walking instead.
 	if (NewMovementMode == MOVE_NavWalking)
 	{
+#if 1	// TODO ISPC
+		unimplemented();
+#else
 		if (Comp->GetNavData() == nullptr)
 		{
 			NewMovementMode = MOVE_Walking;
 		}
+#endif
 	}
 
 	// Do nothing if nothing is changing.
@@ -1591,6 +1824,29 @@ void UShooterUnrolledCppMovementSystem::SetMovementMode(UShooterUnrolledCppMovem
 	OnMovementModeChanged(Comp, PrevMovementMode, PrevCustomMode);
 
 	// @todo UE4 do we need to disable ragdoll physics here? Should this function do nothing if in ragdoll?
+}
+
+void UShooterUnrolledCppMovementSystem::SetGroundMovementMode(UShooterUnrolledCppMovement* Comp, EMovementMode NewGroundMovementMode)
+{
+#if 1	// TODO ISPC: GroundMovementMode is private, but we should be able to work around that.
+	Comp->SetGroundMovementMode(NewGroundMovementMode);
+#else
+	// Enforce restriction that it's either Walking or NavWalking.
+	if (NewGroundMovementMode != MOVE_Walking && NewGroundMovementMode != MOVE_NavWalking)
+	{
+		return;
+	}
+
+	// Set new value
+	Comp->GroundMovementMode = NewGroundMovementMode;
+
+	// Possibly change movement modes if already on ground and choosing the other ground mode.
+	const bool bOnGround = (Comp->MovementMode == MOVE_Walking || Comp->MovementMode == MOVE_NavWalking);
+	if (bOnGround && Comp->MovementMode != NewGroundMovementMode)
+	{
+		SetMovementMode(Comp, NewGroundMovementMode);
+	}
+#endif
 }
 
 void UShooterUnrolledCppMovementSystem::SetDefaultMovementMode(UShooterUnrolledCppMovement* Comp)
@@ -1624,13 +1880,20 @@ void UShooterUnrolledCppMovementSystem::OnMovementModeChanged(UShooterUnrolledCp
 	// Update collision settings if needed
 	if (Comp->MovementMode == MOVE_NavWalking)
 	{
+#if 1	// TODO ISPC
+		unimplemented();
+#else
 		Comp->SetNavWalkingPhysics(true);
-		Comp->SetGroundMovementMode(Comp->MovementMode);
+		SetGroundMovementMode(Comp, Comp->MovementMode);
 		// Walking uses only XY velocity
 		Comp->Velocity.Z = 0.f;
+#endif
 	}
 	else if (PreviousMovementMode == MOVE_NavWalking)
 	{
+#if 1	// TODO ISPC
+		unimplemented();
+#else
 		if (Comp->MovementMode == Comp->DefaultLandMovementMode || Comp->IsWalking())
 		{
 			const bool bSucceeded = Comp->TryToLeaveNavWalking();
@@ -1643,6 +1906,7 @@ void UShooterUnrolledCppMovementSystem::OnMovementModeChanged(UShooterUnrolledCp
 		{
 			Comp->SetNavWalkingPhysics(false);
 		}
+#endif
 	}
 
 	// React to changes in the movement mode.
@@ -1651,7 +1915,7 @@ void UShooterUnrolledCppMovementSystem::OnMovementModeChanged(UShooterUnrolledCp
 		// Walking uses only XY velocity, and must be on a walkable floor, with a Base.
 		Comp->Velocity.Z = 0.f;
 		Comp->bCrouchMaintainsBaseLocation = true;
-		Comp->SetGroundMovementMode(Comp->MovementMode);
+		SetGroundMovementMode(Comp, Comp->MovementMode);
 
 		// make sure we update our new floor/base on initial entry of the walking physics
 		FindFloor(Comp, Comp->UpdatedComponent->GetComponentLocation(), Comp->CurrentFloor, false);
@@ -1666,6 +1930,7 @@ void UShooterUnrolledCppMovementSystem::OnMovementModeChanged(UShooterUnrolledCp
 		if (Comp->MovementMode == MOVE_Falling)
 		{
 			Comp->Velocity += GetImpartedMovementBaseVelocity(Comp);
+			// TODO ISPC: foreach_active?
 			Comp->CharacterOwner->Falling();
 		}
 
@@ -1674,20 +1939,103 @@ void UShooterUnrolledCppMovementSystem::OnMovementModeChanged(UShooterUnrolledCp
 		if (Comp->MovementMode == MOVE_None)
 		{
 			// Kill velocity and clear queued up events
-			Comp->StopMovementKeepPathing();
+			StopMovementKeepPathing(Comp);
 			Comp->CharacterOwner->ClearJumpInput();
-			Comp->ClearAccumulatedForces();
+			ClearAccumulatedForces(Comp);
 		}
 	}
 
 	if (Comp->MovementMode == MOVE_Falling && PreviousMovementMode != MOVE_Falling && Comp->PathFollowingComp.IsValid())
 	{
+		// TODO ISPC: foreach_active?
 		Comp->PathFollowingComp->OnStartedFalling();
 	}
 
+	// TODO ISPC: foreach_active?
 	Comp->CharacterOwner->OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
 	ensureMsgf(Comp->GetGroundMovementMode() == MOVE_Walking || Comp->GetGroundMovementMode() == MOVE_NavWalking, TEXT("Invalid GroundMovementMode %d. MovementMode: %d, PreviousMovementMode: %d"), Comp->GetGroundMovementMode(), Comp->MovementMode.GetValue(), PreviousMovementMode);
 };
+
+bool UShooterUnrolledCppMovementSystem::CheckLedgeDirection(UShooterUnrolledCppMovement* Comp, const FVector& OldLocation, const FVector& SideStep, const FVector& GravDir) const
+{
+	const FVector SideDest = OldLocation + SideStep;
+	FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(CheckLedgeDirection), false, Comp->CharacterOwner);
+	FCollisionResponseParams ResponseParam;
+	InitCollisionParams(Comp, CapsuleParams, ResponseParam);
+	// ISPC: This can be cached, no point in unrolling.
+	const FCollisionShape CapsuleShape = Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_None);
+	const ECollisionChannel CollisionChannel = Comp->UpdatedComponent->GetCollisionObjectType();
+	FHitResult Result(1.f);
+	GetWorld()->SweepSingleByChannel(Result, OldLocation, SideDest, FQuat::Identity, CollisionChannel, CapsuleShape, CapsuleParams, ResponseParam);
+
+	if ( !Result.bBlockingHit || IsWalkable(Result, Comp->GetWalkableFloorZ()) )
+	{
+		if ( !Result.bBlockingHit )
+		{
+			GetWorld()->SweepSingleByChannel(Result, SideDest, SideDest + GravDir * (Comp->MaxStepHeight + Comp->LedgeCheckThreshold), FQuat::Identity, CollisionChannel, CapsuleShape, CapsuleParams, ResponseParam);
+		}
+		if ( (Result.Time < 1.f) && IsWalkable(Result, Comp->GetWalkableFloorZ()) )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+FVector UShooterUnrolledCppMovementSystem::GetLedgeMove(UShooterUnrolledCppMovement* Comp, const FVector& OldLocation, const FVector& Delta, const FVector& GravDir) const
+{
+	if (!HasValidData(Comp) || Delta.IsZero())
+	{
+		return FVector::ZeroVector;
+	}
+
+	FVector SideDir(Delta.Y, -1.f * Delta.X, 0.f);
+		
+	// try left
+	if ( CheckLedgeDirection(Comp, OldLocation, SideDir, GravDir) )
+	{
+		return SideDir;
+	}
+
+	// try right
+	SideDir *= -1.f;
+	if ( CheckLedgeDirection(Comp, OldLocation, SideDir, GravDir) )
+	{
+		return SideDir;
+	}
+	
+	return FVector::ZeroVector;
+}
+
+bool UShooterUnrolledCppMovementSystem::CanWalkOffLedges(UShooterUnrolledCppMovement* Comp) const
+{
+	if (!Comp->bCanWalkOffLedgesWhenCrouching && IsCrouching(Comp))
+	{
+		return false;
+	}	
+
+	return Comp->bCanWalkOffLedges;
+}
+
+bool UShooterUnrolledCppMovementSystem::CheckFall(UShooterUnrolledCppMovement* Comp, const FFindFloorResult& OldFloor, const FHitResult& Hit, const FVector& Delta, const FVector& OldLocation, float remainingTime, float timeTick, int32 Iterations, bool bMustJump)
+{
+	if (!HasValidData(Comp))
+	{
+		return false;
+	}
+
+	if (bMustJump || CanWalkOffLedges(Comp))
+	{
+		Comp->CharacterOwner->OnWalkingOffLedge(OldFloor.HitResult.ImpactNormal, OldFloor.HitResult.Normal, OldLocation, timeTick);
+		if (IsMovingOnGround(Comp))
+		{
+			// If still walking, then fall. If not, assume the user set a different mode they want to keep.
+			StartFalling(Comp, Iterations, remainingTime, timeTick, Delta, OldLocation);
+		}
+		return true;
+	}
+	return false;
+}
 
 void UShooterUnrolledCppMovementSystem::StartSwimming(UShooterUnrolledCppMovement* Comp, FVector OldLocation, FVector OldVelocity, float timeTick, float remainingTime, int32 Iterations)
 {
@@ -1703,14 +2051,14 @@ void UShooterUnrolledCppMovementSystem::StartFalling(UShooterUnrolledCppMovement
 					? 0.f
 					: remainingTime + timeTick * (1.f - FMath::Min(1.f,ActualDist/DesiredDist));
 
-	if (Comp->IsMovingOnGround() )
+	if (IsMovingOnGround(Comp) )
 	{
 		// This is to catch cases where the first frame of PIE is executed, and the
 		// level is not yet visible. In those cases, the player will fall out of the
 		// world... So, don't set MOVE_Falling straight away.
 		if ( !GIsEditor || (GetWorld()->HasBegunPlay() && (GetWorld()->GetTimeSeconds() >= 1.f)) )
 		{
-			Comp->SetMovementMode(MOVE_Falling); //default behavior if script didn't change physics
+			SetMovementMode(Comp, MOVE_Falling); //default behavior if script didn't change physics
 		}
 		else
 		{
@@ -1736,7 +2084,7 @@ void UShooterUnrolledCppMovementSystem::FindFloor(UShooterUnrolledCppMovement* C
 	check(Comp->CharacterOwner->GetCapsuleComponent());
 
 	// Increase height check slightly if walking, to prevent floor height adjustment from later invalidating the floor result.
-	const float HeightCheckAdjust = (Comp->IsMovingOnGround() ? UCharacterMovementComponent::MAX_FLOOR_DIST + KINDA_SMALL_NUMBER : -UCharacterMovementComponent::MAX_FLOOR_DIST);
+	const float HeightCheckAdjust = (IsMovingOnGround(Comp) ? UCharacterMovementComponent::MAX_FLOOR_DIST + KINDA_SMALL_NUMBER : -UCharacterMovementComponent::MAX_FLOOR_DIST);
 
 	float FloorSweepTraceDist = FMath::Max(UCharacterMovementComponent::MAX_FLOOR_DIST, Comp->MaxStepHeight + HeightCheckAdjust);
 	float FloorLineTraceDist = FloorSweepTraceDist;
@@ -1785,16 +2133,16 @@ void UShooterUnrolledCppMovementSystem::FindFloor(UShooterUnrolledCppMovement* C
 	if (bNeedToValidateFloor && OutFloorResult.bBlockingHit && !OutFloorResult.bLineTrace)
 	{
 		const bool bCheckRadius = true;
-		if (Comp->ShouldComputePerchResult(OutFloorResult.HitResult, bCheckRadius))
+		if (ShouldComputePerchResult(Comp, OutFloorResult.HitResult, bCheckRadius))
 		{
 			float MaxPerchFloorDist = FMath::Max(UCharacterMovementComponent::MAX_FLOOR_DIST, Comp->MaxStepHeight + HeightCheckAdjust);
-			if (Comp->IsMovingOnGround())
+			if (IsMovingOnGround(Comp))
 			{
 				MaxPerchFloorDist += FMath::Max(0.f, Comp->PerchAdditionalHeight);
 			}
 
 			FFindFloorResult PerchFloorResult;
-			if (ComputePerchResult(Comp, Comp->GetValidPerchRadius(), OutFloorResult.HitResult, MaxPerchFloorDist, PerchFloorResult))
+			if (ComputePerchResult(Comp, GetValidPerchRadius(Comp), OutFloorResult.HitResult, MaxPerchFloorDist, PerchFloorResult))
 			{
 				// Don't allow the floor distance adjustment to push us up too high, or we will move beyond the perch distance and fall next time.
 				const float AvgFloorDist = (UCharacterMovementComponent::MIN_FLOOR_DIST + UCharacterMovementComponent::MAX_FLOOR_DIST) * 0.5f;
@@ -1816,15 +2164,6 @@ void UShooterUnrolledCppMovementSystem::FindFloor(UShooterUnrolledCppMovement* C
 				OutFloorResult.bWalkableFloor = false;
 			}
 		}
-	}
-}
-
-static void InitCollisionParams(UShooterUnrolledCppMovement* Comp, FCollisionQueryParams &OutParams, FCollisionResponseParams& OutResponseParam)
-{
-	if (Comp->UpdatedPrimitive)
-	{
-		/*foreach_active*/
-		Comp->UpdatedPrimitive->InitSweepCollisionParams(OutParams, OutResponseParam);
 	}
 }
 
@@ -2011,7 +2350,7 @@ bool UShooterUnrolledCppMovementSystem::FloorSweepTest(
 
 	if (!Comp->bUseFlatBaseForFloorChecks)
 	{
-		bBlockingHit = Comp->GetWorld()->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity, TraceChannel, CollisionShape, Params, ResponseParam);
+		bBlockingHit = GetWorld()->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity, TraceChannel, CollisionShape, Params, ResponseParam);
 	}
 	else
 	{
@@ -2027,7 +2366,7 @@ bool UShooterUnrolledCppMovementSystem::FloorSweepTest(
 		{
 			// Test again with the same box, not rotated.
 			OutHit.Reset(1.f, false);
-			bBlockingHit = Comp->GetWorld()->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity, TraceChannel, BoxShape, Params, ResponseParam);
+			bBlockingHit = GetWorld()->SweepSingleByChannel(OutHit, Start, End, FQuat::Identity, TraceChannel, BoxShape, Params, ResponseParam);
 		}
 	}
 
@@ -2037,6 +2376,7 @@ bool UShooterUnrolledCppMovementSystem::FloorSweepTest(
 void UShooterUnrolledCppMovementSystem::RevertMove(UShooterUnrolledCppMovement* Comp, const FVector& OldLocation, UPrimitiveComponent* OldBase, const FVector& PreviousBaseLocation, const FFindFloorResult& OldFloor, bool bFailMove)
 {
 	//UE_LOG(LogUnrolledCharacterMovement, Log, TEXT("RevertMove from %f %f %f to %f %f %f"), CharacterOwner->Location.X, CharacterOwner->Location.Y, CharacterOwner->Location.Z, OldLocation.X, OldLocation.Y, OldLocation.Z);
+	// TODO ISPC: foreach_active?
 	Comp->UpdatedComponent->SetWorldLocation(OldLocation, false);
 
 	//UE_LOG(LogUnrolledCharacterMovement, Log, TEXT("Now at %f %f %f"), CharacterOwner->Location.X, CharacterOwner->Location.Y, CharacterOwner->Location.Z);
@@ -2063,6 +2403,140 @@ void UShooterUnrolledCppMovementSystem::RevertMove(UShooterUnrolledCppMovement* 
 		Comp->Velocity = FVector::ZeroVector;
 		Comp->Acceleration = FVector::ZeroVector;
 		//UE_LOG(LogUnrolledCharacterMovement, Log, TEXT("%s FAILMOVE RevertMove"), *CharacterOwner->GetName());
+	}
+}
+
+FVector UShooterUnrolledCppMovementSystem::ComputeGroundMovementDelta(UShooterUnrolledCppMovement* Comp, const FVector& Delta, const FHitResult& RampHit, const bool bHitFromLineTrace) const
+{
+	const FVector FloorNormal = RampHit.ImpactNormal;
+	const FVector ContactNormal = RampHit.Normal;
+
+	if (FloorNormal.Z < (1.f - KINDA_SMALL_NUMBER) && FloorNormal.Z > KINDA_SMALL_NUMBER && ContactNormal.Z > KINDA_SMALL_NUMBER && !bHitFromLineTrace && IsWalkable(RampHit, Comp->GetWalkableFloorZ()))
+	{
+		// Compute a vector that moves parallel to the surface, by projecting the horizontal movement direction onto the ramp.
+		const float FloorDotDelta = (FloorNormal | Delta);
+		FVector RampMovement(Delta.X, Delta.Y, -FloorDotDelta / FloorNormal.Z);
+		
+		if (Comp->bMaintainHorizontalGroundVelocity)
+		{
+			return RampMovement;
+		}
+		else
+		{
+			return RampMovement.GetSafeNormal() * Delta.Size();
+		}
+	}
+
+	return Delta;
+}
+
+void UShooterUnrolledCppMovementSystem::OnCharacterStuckInGeometry(UShooterUnrolledCppMovement* Comp, const FHitResult* Hit)
+{
+	const int32 StuckWarningPeriod = CVars::CharacterStuckWarningPeriod->GetInt();
+	if (StuckWarningPeriod >= 0)
+	{
+		UWorld* MyWorld = GetWorld();
+		const float RealTimeSeconds = MyWorld->GetRealTimeSeconds();
+		if ((RealTimeSeconds - Comp->LastStuckWarningTime) >= StuckWarningPeriod)
+		{
+			Comp->LastStuckWarningTime = RealTimeSeconds;
+			if (Hit == nullptr)
+			{
+				UE_LOG(LogUnrolledCharacterMovement, Log, TEXT("%s is stuck and failed to move! (%d other events since notify)"), *Comp->CharacterOwner->GetName(), Comp->StuckWarningCountSinceNotify);
+			}
+			else
+			{
+				UE_LOG(LogUnrolledCharacterMovement, Log, TEXT("%s is stuck and failed to move! Velocity: X=%3.2f Y=%3.2f Z=%3.2f Location: X=%3.2f Y=%3.2f Z=%3.2f Normal: X=%3.2f Y=%3.2f Z=%3.2f PenetrationDepth:%.3f Actor:%s Component:%s BoneName:%s (%d other events since notify)"),
+					   *GetNameSafe(Comp->CharacterOwner),
+					   Comp->Velocity.X, Comp->Velocity.Y, Comp->Velocity.Z,
+					   Hit->Location.X, Hit->Location.Y, Hit->Location.Z,
+					   Hit->Normal.X, Hit->Normal.Y, Hit->Normal.Z,
+					   Hit->PenetrationDepth,
+					   *GetNameSafe(Hit->GetActor()),
+					   *GetNameSafe(Hit->GetComponent()),
+					   Hit->BoneName.IsValid() ? *Hit->BoneName.ToString() : TEXT("None"),
+					   Comp->StuckWarningCountSinceNotify
+					   );
+			}
+			Comp->StuckWarningCountSinceNotify = 0;
+		}
+		else
+		{
+			Comp->StuckWarningCountSinceNotify += 1;
+		}
+	}
+
+	// Don't update velocity based on our (failed) change in position this update since we're stuck.
+	Comp->bJustTeleported = true;
+}
+
+void UShooterUnrolledCppMovementSystem::MoveAlongFloor(UShooterUnrolledCppMovement* Comp, const FVector& InVelocity, float DeltaSeconds, UCharacterMovementComponent::FStepDownResult* OutStepDownResult)
+{
+	if (!Comp->CurrentFloor.IsWalkableFloor())
+	{
+		return;
+	}
+
+	// Move along the current floor
+	const FVector Delta = FVector(InVelocity.X, InVelocity.Y, 0.f) * DeltaSeconds;
+	FHitResult Hit(1.f);
+	FVector RampVector = ComputeGroundMovementDelta(Comp, Delta, Comp->CurrentFloor.HitResult, Comp->CurrentFloor.bLineTrace);
+	const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap = !!CVars::MoveIgnoreFirstBlockingOverlap->GetInt();
+	SafeMoveUpdatedComponent(Comp, bMoveIgnoreFirstBlockingOverlap, RampVector, Comp->UpdatedComponent->GetComponentQuat(), true, Hit);
+	float LastMoveTimeSlice = DeltaSeconds;
+	
+	if (Hit.bStartPenetrating)
+	{
+		// Allow this hit to be used as an impact we can deflect off, otherwise we do nothing the rest of the update and appear to hitch.
+		HandleImpact(Comp, Hit);
+		SlideAlongSurface(Comp, Delta, 1.f, Hit.Normal, Hit, true);
+
+		if (Hit.bStartPenetrating)
+		{
+			OnCharacterStuckInGeometry(Comp, &Hit);
+		}
+	}
+	else if (Hit.IsValidBlockingHit())
+	{
+		// We impacted something (most likely another ramp, but possibly a barrier).
+		float PercentTimeApplied = Hit.Time;
+		if ((Hit.Time > 0.f) && (Hit.Normal.Z > KINDA_SMALL_NUMBER) && IsWalkable(Hit, Comp->GetWalkableFloorZ()))
+		{
+			// Another walkable ramp.
+			const float InitialPercentRemaining = 1.f - PercentTimeApplied;
+			RampVector = ComputeGroundMovementDelta(Comp, Delta * InitialPercentRemaining, Hit, false);
+			LastMoveTimeSlice = InitialPercentRemaining * LastMoveTimeSlice;
+			SafeMoveUpdatedComponent(Comp, bMoveIgnoreFirstBlockingOverlap, RampVector, Comp->UpdatedComponent->GetComponentQuat(), true, Hit);
+
+			const float SecondHitPercent = Hit.Time * InitialPercentRemaining;
+			PercentTimeApplied = FMath::Clamp(PercentTimeApplied + SecondHitPercent, 0.f, 1.f);
+		}
+
+		if (Hit.IsValidBlockingHit())
+		{
+			if (CanStepUp(Comp, Hit) || (Comp->CharacterOwner->GetMovementBase() != NULL && Comp->CharacterOwner->GetMovementBase()->GetOwner() == Hit.GetActor()))
+			{
+				// hit a barrier, try to step up
+				const FVector GravDir(0.f, 0.f, -1.f);
+				if (!StepUp(Comp, GravDir, Delta * (1.f - PercentTimeApplied), Hit, OutStepDownResult))
+				{
+					UE_LOG(LogUnrolledCharacterMovement, Verbose, TEXT("- StepUp (ImpactNormal %s, Normal %s"), *Hit.ImpactNormal.ToString(), *Hit.Normal.ToString());
+					HandleImpact(Comp, Hit, LastMoveTimeSlice, RampVector);
+					SlideAlongSurface(Comp, Delta, 1.f - PercentTimeApplied, Hit.Normal, Hit, true);
+				}
+				else
+				{
+					// Don't recalculate velocity based on this height adjustment, if considering vertical adjustments.
+					UE_LOG(LogUnrolledCharacterMovement, Verbose, TEXT("+ StepUp (ImpactNormal %s, Normal %s"), *Hit.ImpactNormal.ToString(), *Hit.Normal.ToString());
+					Comp->bJustTeleported |= !Comp->bMaintainHorizontalGroundVelocity;
+				}
+			}
+			else if ( Hit.Component.IsValid() && !Hit.Component.Get()->CanCharacterStepUp(Comp->CharacterOwner) )
+			{
+				HandleImpact(Comp, Hit, LastMoveTimeSlice, RampVector);
+				SlideAlongSurface(Comp, Delta, 1.f - PercentTimeApplied, Hit.Normal, Hit, true);
+			}
+		}
 	}
 }
 
@@ -2116,6 +2590,33 @@ FVector UShooterUnrolledCppMovementSystem::GetPenetrationAdjustment(UShooterUnro
 	return Result;
 }
 
+bool UShooterUnrolledCppMovementSystem::ShouldComputePerchResult(UShooterUnrolledCppMovement* Comp, const FHitResult& InHit, bool bCheckRadius) const
+{
+	if (!InHit.IsValidBlockingHit())
+	{
+		return false;
+	}
+
+	// Don't try to perch if the edge radius is very small.
+	if (GetPerchRadiusThreshold(Comp) <= UCharacterMovementComponent::SWEEP_EDGE_REJECT_DISTANCE)
+	{
+		return false;
+	}
+
+	if (bCheckRadius)
+	{
+		const float DistFromCenterSq = (InHit.ImpactPoint - InHit.Location).SizeSquared2D();
+		const float StandOnEdgeRadius = GetValidPerchRadius(Comp);
+		if (DistFromCenterSq <= FMath::Square(StandOnEdgeRadius))
+		{
+			// Already within perch radius.
+			return false;
+		}
+	}
+	
+	return true;
+}
+
 bool UShooterUnrolledCppMovementSystem::ComputePerchResult(UShooterUnrolledCppMovement* Comp, const float TestRadius, const FHitResult& InHit, const float InMaxFloorDist, FFindFloorResult& OutPerchFloorResult) const
 {
 	if (InMaxFloorDist <= 0.f)
@@ -2144,6 +2645,258 @@ bool UShooterUnrolledCppMovementSystem::ComputePerchResult(UShooterUnrolledCppMo
 		OutPerchFloorResult.bWalkableFloor = false;
 		return false;
 	}
+
+	return true;
+}
+
+bool UShooterUnrolledCppMovementSystem::CanStepUp(UShooterUnrolledCppMovement* Comp, const FHitResult& Hit) const
+{
+	if (!Hit.IsValidBlockingHit() || !HasValidData(Comp) || Comp->MovementMode == MOVE_Falling)
+	{
+		return false;
+	}
+
+	// No component for "fake" hits when we are on a known good base.
+	const UPrimitiveComponent* HitComponent = Hit.Component.Get();
+	if (!HitComponent)
+	{
+		return true;
+	}
+
+	if (!HitComponent->CanCharacterStepUp(Comp->CharacterOwner))
+	{
+		return false;
+	}
+
+	// No actor for "fake" hits when we are on a known good base.
+	const AActor* HitActor = Hit.GetActor();
+	if (!HitActor)
+	{
+		 return true;
+	}
+
+	if (!HitActor->CanBeBaseForCharacter(Comp->CharacterOwner))
+	{
+		return false;
+	}
+
+	return true;
+}
+
+
+bool UShooterUnrolledCppMovementSystem::StepUp(UShooterUnrolledCppMovement* Comp, const FVector& GravDir, const FVector& Delta, const FHitResult &InHit, UCharacterMovementComponent::FStepDownResult* OutStepDownResult)
+{
+	SCOPE_CYCLE_COUNTER(STAT_CharStepUp);
+
+	if (!CanStepUp(Comp, InHit) || Comp->MaxStepHeight <= 0.f)
+	{
+		return false;
+	}
+
+	const FVector OldLocation = Comp->UpdatedComponent->GetComponentLocation();
+	float PawnRadius, PawnHalfHeight;
+	Comp->CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleSize(PawnRadius, PawnHalfHeight);
+
+	// Don't bother stepping up if top of capsule is hitting something.
+	const float InitialImpactZ = InHit.ImpactPoint.Z;
+	if (InitialImpactZ > OldLocation.Z + (PawnHalfHeight - PawnRadius))
+	{
+		return false;
+	}
+
+	if (GravDir.IsZero())
+	{
+		return false;
+	}
+
+	// Gravity should be a normalized direction
+	ensure(GravDir.IsNormalized());
+
+	float StepTravelUpHeight = Comp->MaxStepHeight;
+	float StepTravelDownHeight = StepTravelUpHeight;
+	const float StepSideZ = -1.f * FVector::DotProduct(InHit.ImpactNormal, GravDir);
+	float PawnInitialFloorBaseZ = OldLocation.Z - PawnHalfHeight;
+	float PawnFloorPointZ = PawnInitialFloorBaseZ;
+
+	if (IsMovingOnGround(Comp) && Comp->CurrentFloor.IsWalkableFloor())
+	{
+		// Since we float a variable amount off the floor, we need to enforce max step height off the actual point of impact with the floor.
+		const float FloorDist = FMath::Max(0.f, Comp->CurrentFloor.GetDistanceToFloor());
+		PawnInitialFloorBaseZ -= FloorDist;
+		StepTravelUpHeight = FMath::Max(StepTravelUpHeight - FloorDist, 0.f);
+		StepTravelDownHeight = (Comp->MaxStepHeight + UCharacterMovementComponent::MAX_FLOOR_DIST*2.f);
+
+		const bool bHitVerticalFace = !IsWithinEdgeTolerance(InHit.Location, InHit.ImpactPoint, PawnRadius);
+		if (!Comp->CurrentFloor.bLineTrace && !bHitVerticalFace)
+		{
+			PawnFloorPointZ = Comp->CurrentFloor.HitResult.ImpactPoint.Z;
+		}
+		else
+		{
+			// Base floor point is the base of the capsule moved down by how far we are hovering over the surface we are hitting.
+			PawnFloorPointZ -= Comp->CurrentFloor.FloorDist;
+		}
+	}
+
+	// Don't step up if the impact is below us, accounting for distance from floor.
+	if (InitialImpactZ <= PawnInitialFloorBaseZ)
+	{
+		return false;
+	}
+
+	// Scope our movement updates, and do not apply them until all intermediate moves are completed.
+	// TODO ISPC
+	FScopedMovementUpdate ScopedStepUpMovement(Comp->UpdatedComponent, EScopedUpdate::DeferredUpdates);
+
+	// step up - treat as vertical wall
+	FHitResult SweepUpHit(1.f);
+	const FQuat PawnRotation = Comp->UpdatedComponent->GetComponentQuat();
+	MoveUpdatedComponent(Comp, -GravDir * StepTravelUpHeight, PawnRotation, true, &SweepUpHit);
+
+	if (SweepUpHit.bStartPenetrating)
+	{
+		// Undo movement
+		ScopedStepUpMovement.RevertMove();
+		return false;
+	}
+
+	// step fwd
+	FHitResult Hit(1.f);
+	MoveUpdatedComponent( Comp, Delta, PawnRotation, true, &Hit);
+
+	// Check result of forward movement
+	if (Hit.bBlockingHit)
+	{
+		if (Hit.bStartPenetrating)
+		{
+			// Undo movement
+			ScopedStepUpMovement.RevertMove();
+			return false;
+		}
+
+		// If we hit something above us and also something ahead of us, we should notify about the upward hit as well.
+		// The forward hit will be handled later (in the bSteppedOver case below).
+		// In the case of hitting something above but not forward, we are not blocked from moving so we don't need the notification.
+		if (SweepUpHit.bBlockingHit && Hit.bBlockingHit)
+		{
+			HandleImpact(Comp, SweepUpHit);
+		}
+
+		// pawn ran into a wall
+		HandleImpact(Comp, Hit);
+		if (IsFalling(Comp))
+		{
+			return true;
+		}
+
+		// adjust and try again
+		const float ForwardHitTime = Hit.Time;
+		const float ForwardSlideAmount = SlideAlongSurface(Comp, Delta, 1.f - Hit.Time, Hit.Normal, Hit, true);
+		
+		if (IsFalling(Comp))
+		{
+			ScopedStepUpMovement.RevertMove();
+			return false;
+		}
+
+		// If both the forward hit and the deflection got us nowhere, there is no point in this step up.
+		if (ForwardHitTime == 0.f && ForwardSlideAmount == 0.f)
+		{
+			ScopedStepUpMovement.RevertMove();
+			return false;
+		}
+	}
+	
+	// Step down
+	MoveUpdatedComponent(Comp, GravDir * StepTravelDownHeight, Comp->UpdatedComponent->GetComponentQuat(), true, &Hit);
+
+	// If step down was initially penetrating abort the step up
+	if (Hit.bStartPenetrating)
+	{
+		ScopedStepUpMovement.RevertMove();
+		return false;
+	}
+
+	UCharacterMovementComponent::FStepDownResult StepDownResult;
+	if (Hit.IsValidBlockingHit())
+	{	
+		// See if this step sequence would have allowed us to travel higher than our max step height allows.
+		const float DeltaZ = Hit.ImpactPoint.Z - PawnFloorPointZ;
+		if (DeltaZ > Comp->MaxStepHeight)
+		{
+			//UE_LOG(LogCharacterMovement, VeryVerbose, TEXT("- Reject StepUp (too high Height %.3f) up from floor base %f to %f"), DeltaZ, PawnInitialFloorBaseZ, NewLocation.Z);
+			ScopedStepUpMovement.RevertMove();
+			return false;
+		}
+
+		// Reject unwalkable surface normals here.
+		if (!IsWalkable(Hit, Comp->GetWalkableFloorZ()))
+		{
+			// Reject if normal opposes movement direction
+			const bool bNormalTowardsMe = (Delta | Hit.ImpactNormal) < 0.f;
+			if (bNormalTowardsMe)
+			{
+				//UE_LOG(LogCharacterMovement, VeryVerbose, TEXT("- Reject StepUp (unwalkable normal %s opposed to movement)"), *Hit.ImpactNormal.ToString());
+				ScopedStepUpMovement.RevertMove();
+				return false;
+			}
+
+			// Also reject if we would end up being higher than our starting location by stepping down.
+			// It's fine to step down onto an unwalkable normal below us, we will just slide off. Rejecting those moves would prevent us from being able to walk off the edge.
+			if (Hit.Location.Z > OldLocation.Z)
+			{
+				//UE_LOG(LogCharacterMovement, VeryVerbose, TEXT("- Reject StepUp (unwalkable normal %s above old position)"), *Hit.ImpactNormal.ToString());
+				ScopedStepUpMovement.RevertMove();
+				return false;
+			}
+		}
+
+		// Reject moves where the downward sweep hit something very close to the edge of the capsule. This maintains consistency with FindFloor as well.
+		if (!IsWithinEdgeTolerance(Hit.Location, Hit.ImpactPoint, PawnRadius))
+		{
+			//UE_LOG(LogCharacterMovement, VeryVerbose, TEXT("- Reject StepUp (outside edge tolerance)"));
+			ScopedStepUpMovement.RevertMove();
+			return false;
+		}
+
+		// Don't step up onto invalid surfaces if traveling higher.
+		if (DeltaZ > 0.f && !CanStepUp(Comp, Hit))
+		{
+			//UE_LOG(LogCharacterMovement, VeryVerbose, TEXT("- Reject StepUp (up onto surface with !CanStepUp())"));
+			ScopedStepUpMovement.RevertMove();
+			return false;
+		}
+
+		// See if we can validate the floor as a result of this step down. In almost all cases this should succeed, and we can avoid computing the floor outside this method.
+		if (OutStepDownResult != NULL)
+		{
+			FindFloor(Comp, Comp->UpdatedComponent->GetComponentLocation(), StepDownResult.FloorResult, false, &Hit);
+
+			// Reject unwalkable normals if we end up higher than our initial height.
+			// It's fine to walk down onto an unwalkable surface, don't reject those moves.
+			if (Hit.Location.Z > OldLocation.Z)
+			{
+				// We should reject the floor result if we are trying to step up an actual step where we are not able to perch (this is rare).
+				// In those cases we should instead abort the step up and try to slide along the stair.
+				if (!StepDownResult.FloorResult.bBlockingHit && StepSideZ < MAX_STEP_SIDE_Z)
+				{
+					ScopedStepUpMovement.RevertMove();
+					return false;
+				}
+			}
+
+			StepDownResult.bComputedFloor = true;
+		}
+	}
+	
+	// Copy step down result.
+	if (OutStepDownResult != NULL)
+	{
+		*OutStepDownResult = StepDownResult;
+	}
+
+	// Don't recalculate velocity based on this height adjustment, if considering vertical adjustments.
+	Comp->bJustTeleported |= !Comp->bMaintainHorizontalGroundVelocity;
 
 	return true;
 }
@@ -2181,6 +2934,19 @@ FVector UShooterUnrolledCppMovementSystem::GetImpartedMovementBaseVelocity(UShoo
 	}
 	
 	return Result;
+}
+
+bool UShooterUnrolledCppMovementSystem::HandlePendingLaunch(UShooterUnrolledCppMovement* Comp)
+{
+	if (!Comp->PendingLaunchVelocity.IsZero() && HasValidData(Comp))
+	{
+		Comp->Velocity = Comp->PendingLaunchVelocity;
+		SetMovementMode(Comp, MOVE_Falling);
+		Comp->PendingLaunchVelocity = FVector::ZeroVector;
+		return true;
+	}
+
+	return false;
 }
 
 void UShooterUnrolledCppMovementSystem::AdjustFloorHeight(UShooterUnrolledCppMovement* Comp)
@@ -2322,6 +3088,312 @@ void UShooterUnrolledCppMovementSystem::MaybeUpdateBasedMovement(UShooterUnrolle
 	}
 }
 
+void UShooterUnrolledCppMovementSystem::MaybeSaveBaseLocation(UShooterUnrolledCppMovement* Comp)
+{
+	if (!Comp->bDeferUpdateBasedMovement)
+	{
+		SaveBaseLocation(Comp);
+	}
+	else { unimplemented(); }	// TODO ISPC
+}
+
+void UShooterUnrolledCppMovementSystem::SaveBaseLocation(UShooterUnrolledCppMovement* Comp)
+{
+	if (!HasValidData(Comp))
+	{
+		return;
+	}
+
+	const UPrimitiveComponent* MovementBase = Comp->CharacterOwner->GetMovementBase();
+	if (MovementBaseUtility::UseRelativeLocation(MovementBase) && !Comp->CharacterOwner->IsMatineeControlled())
+	{
+		// Read transforms into OldBaseLocation, OldBaseQuat
+		MovementBaseUtility::GetMovementBaseTransform(MovementBase, Comp->CharacterOwner->GetBasedMovement().BoneName, Comp->OldBaseLocation, Comp->OldBaseQuat);
+
+		// Location
+		const FVector RelativeLocation = Comp->UpdatedComponent->GetComponentLocation() - Comp->OldBaseLocation;
+
+		// Rotation
+		// TODO ISPC: foreach_active
+		if (Comp->bIgnoreBaseRotation)
+		{
+			// Absolute rotation
+			Comp->CharacterOwner->SaveRelativeBasedMovement(RelativeLocation, Comp->UpdatedComponent->GetComponentRotation(), false);
+		}
+		else
+		{
+			// Relative rotation
+			const FRotator RelativeRotation = (FQuatRotationMatrix(Comp->UpdatedComponent->GetComponentQuat()) * FQuatRotationMatrix(Comp->OldBaseQuat).GetTransposed()).Rotator();
+			Comp->CharacterOwner->SaveRelativeBasedMovement(RelativeLocation, RelativeRotation, true);
+		}
+	}
+}
+
+bool UShooterUnrolledCppMovementSystem::CanCrouchInCurrentState(UShooterUnrolledCppMovement* Comp) const
+{
+	if (!Comp->NavAgentProps.bCanCrouch)	// ISPC: Inlined call to UNavMovementComponent::CanEverCrouch().
+	{
+		return false;
+	}
+
+	return IsFalling(Comp) || IsMovingOnGround(Comp);
+}
+
+
+void UShooterUnrolledCppMovementSystem::Crouch(UShooterUnrolledCppMovement* Comp, bool bClientSimulation)
+{
+	if (!HasValidData(Comp))
+	{
+		return;
+	}
+
+	if (!bClientSimulation && !CanCrouchInCurrentState(Comp))
+	{
+		return;
+	}
+
+	// See if collision is already at desired size.
+	if (Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() == Comp->CrouchedHalfHeight)
+	{
+		if (!bClientSimulation)
+		{
+			Comp->CharacterOwner->bIsCrouched = true;
+		}
+		// TODO ISPC: foreach_active
+		Comp->CharacterOwner->OnStartCrouch( 0.f, 0.f );
+		return;
+	}
+
+	if (bClientSimulation && Comp->CharacterOwner->Role == ROLE_SimulatedProxy)
+	{
+		// restore collision size before crouching
+		// TODO ISPC: Cache this.
+		ACharacter* DefaultCharacter = Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>();
+		// TODO ISPC: foreach_active
+		Comp->CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius(), DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight());
+		Comp->bShrinkProxyCapsule = true;
+	}
+
+	// Change collision size to crouching dimensions
+	const float ComponentScale = Comp->CharacterOwner->GetCapsuleComponent()->GetShapeScale();
+	const float OldUnscaledHalfHeight = Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
+	const float OldUnscaledRadius = Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleRadius();
+	// Height is not allowed to be smaller than radius.
+	const float ClampedCrouchedHalfHeight = FMath::Max3(0.f, OldUnscaledRadius, Comp->CrouchedHalfHeight);
+	Comp->CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(OldUnscaledRadius, ClampedCrouchedHalfHeight);
+	float HalfHeightAdjust = (OldUnscaledHalfHeight - ClampedCrouchedHalfHeight);
+	float ScaledHalfHeightAdjust = HalfHeightAdjust * ComponentScale;
+
+	if( !bClientSimulation )
+	{
+		// Crouching to a larger height? (this is rare)
+		if (ClampedCrouchedHalfHeight > OldUnscaledHalfHeight)
+		{
+			FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(CrouchTrace), false, Comp->CharacterOwner);
+			FCollisionResponseParams ResponseParam;
+			InitCollisionParams(Comp, CapsuleParams, ResponseParam);
+			const bool bEncroached = GetWorld()->OverlapBlockingTestByChannel(Comp->UpdatedComponent->GetComponentLocation() - FVector(0.f,0.f,ScaledHalfHeightAdjust), FQuat::Identity,
+				Comp->UpdatedComponent->GetCollisionObjectType(), Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_None), CapsuleParams, ResponseParam);
+
+			// If encroached, cancel
+			if( bEncroached )
+			{
+				Comp->CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(OldUnscaledRadius, OldUnscaledHalfHeight);
+				return;
+			}
+		}
+
+		if (Comp->bCrouchMaintainsBaseLocation)
+		{
+			// Intentionally not using MoveUpdatedComponent, where a horizontal plane constraint would prevent the base of the capsule from staying at the same spot.
+			Comp->UpdatedComponent->MoveComponent(FVector(0.f, 0.f, -ScaledHalfHeightAdjust), Comp->UpdatedComponent->GetComponentQuat(), true, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+		}
+
+		Comp->CharacterOwner->bIsCrouched = true;
+	}
+
+	Comp->bForceNextFloorCheck = true;
+
+	// OnStartCrouch takes the change from the Default size, not the current one (though they are usually the same).
+	const float MeshAdjust = ScaledHalfHeightAdjust;
+	// TODO ISPC: Cache this.
+	ACharacter* DefaultCharacter = Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>();
+	HalfHeightAdjust = (DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() - ClampedCrouchedHalfHeight);
+	ScaledHalfHeightAdjust = HalfHeightAdjust * ComponentScale;
+
+#if 0	// TODO ISPC
+	AdjustProxyCapsuleSize(Comp);
+#endif
+	// TODO ISPC: foreach_active
+	Comp->CharacterOwner->OnStartCrouch( HalfHeightAdjust, ScaledHalfHeightAdjust );
+
+	// Don't smooth this change in mesh position
+	if (bClientSimulation && Comp->CharacterOwner->Role == ROLE_SimulatedProxy)
+	{
+#if 1	// TODO ISPC
+		unimplemented();
+#else
+		FNetworkPredictionData_Client_Character* ClientData = GetPredictionData_Client_Character();
+		if (ClientData && ClientData->MeshTranslationOffset.Z != 0.f)
+		{
+			ClientData->MeshTranslationOffset -= FVector(0.f, 0.f, MeshAdjust);
+			ClientData->OriginalMeshTranslationOffset = ClientData->MeshTranslationOffset;
+		}
+#endif
+	}
+}
+
+
+void UShooterUnrolledCppMovementSystem::UnCrouch(UShooterUnrolledCppMovement* Comp, bool bClientSimulation)
+{
+	if (!HasValidData(Comp))
+	{
+		return;
+	}
+
+	// TODO ISPC: Cache this.
+	ACharacter* DefaultCharacter = Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>();
+
+	// See if collision is already at desired size.
+	if( Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() == DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() )
+	{
+		if (!bClientSimulation)
+		{
+			Comp->CharacterOwner->bIsCrouched = false;
+		}
+		Comp->CharacterOwner->OnEndCrouch( 0.f, 0.f );
+		return;
+	}
+
+	const float CurrentCrouchedHalfHeight = Comp->CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+
+	const float ComponentScale = Comp->CharacterOwner->GetCapsuleComponent()->GetShapeScale();
+	const float OldUnscaledHalfHeight = Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
+	const float HalfHeightAdjust = DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() - OldUnscaledHalfHeight;
+	const float ScaledHalfHeightAdjust = HalfHeightAdjust * ComponentScale;
+	const FVector PawnLocation = Comp->UpdatedComponent->GetComponentLocation();
+
+	// Grow to uncrouched size.
+	check(Comp->CharacterOwner->GetCapsuleComponent());
+
+	if( !bClientSimulation )
+	{
+		// Try to stay in place and see if the larger capsule fits. We use a slightly taller capsule to avoid penetration.
+		const float SweepInflation = KINDA_SMALL_NUMBER * 10.f;
+		FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(CrouchTrace), false, Comp->CharacterOwner);
+		FCollisionResponseParams ResponseParam;
+		InitCollisionParams(Comp, CapsuleParams, ResponseParam);
+
+		// Compensate for the difference between current capsule size and standing size
+		const FCollisionShape StandingCapsuleShape = Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_HeightCustom, -SweepInflation - ScaledHalfHeightAdjust); // Shrink by negative amount, so actually grow it.
+		const ECollisionChannel CollisionChannel = Comp->UpdatedComponent->GetCollisionObjectType();
+		bool bEncroached = true;
+
+		if (!Comp->bCrouchMaintainsBaseLocation)
+		{
+			// Expand in place
+			bEncroached = GetWorld()->OverlapBlockingTestByChannel(PawnLocation, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+		
+			if (bEncroached)
+			{
+				// Try adjusting capsule position to see if we can avoid encroachment.
+				if (ScaledHalfHeightAdjust > 0.f)
+				{
+					// Shrink to a short capsule, sweep down to base to find where that would hit something, and then try to stand up from there.
+					float PawnRadius, PawnHalfHeight;
+					Comp->CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleSize(PawnRadius, PawnHalfHeight);
+					const float ShrinkHalfHeight = PawnHalfHeight - PawnRadius;
+					const float TraceDist = PawnHalfHeight - ShrinkHalfHeight;
+					const FVector Down = FVector(0.f, 0.f, -TraceDist);
+
+					FHitResult Hit(1.f);
+					const FCollisionShape ShortCapsuleShape = Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_HeightCustom, ShrinkHalfHeight);
+					const bool bBlockingHit = GetWorld()->SweepSingleByChannel(Hit, PawnLocation, PawnLocation + Down, FQuat::Identity, CollisionChannel, ShortCapsuleShape, CapsuleParams);
+					if (Hit.bStartPenetrating)
+					{
+						bEncroached = true;
+					}
+					else
+					{
+						// Compute where the base of the sweep ended up, and see if we can stand there
+						const float DistanceToBase = (Hit.Time * TraceDist) + ShortCapsuleShape.Capsule.HalfHeight;
+						const FVector NewLoc = FVector(PawnLocation.X, PawnLocation.Y, PawnLocation.Z - DistanceToBase + PawnHalfHeight + SweepInflation + UCharacterMovementComponent::MIN_FLOOR_DIST / 2.f);
+						bEncroached = GetWorld()->OverlapBlockingTestByChannel(NewLoc, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+						if (!bEncroached)
+						{
+							// Intentionally not using MoveUpdatedComponent, where a horizontal plane constraint would prevent the base of the capsule from staying at the same spot.
+							Comp->UpdatedComponent->MoveComponent(NewLoc - PawnLocation, Comp->UpdatedComponent->GetComponentQuat(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			// Expand while keeping base location the same.
+			FVector StandingLocation = PawnLocation + FVector(0.f, 0.f, StandingCapsuleShape.GetCapsuleHalfHeight() - CurrentCrouchedHalfHeight);
+			bEncroached = GetWorld()->OverlapBlockingTestByChannel(StandingLocation, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+
+			if (bEncroached)
+			{
+				if (IsMovingOnGround(Comp))
+				{
+					// Something might be just barely overhead, try moving down closer to the floor to avoid it.
+					const float MinFloorDist = KINDA_SMALL_NUMBER * 10.f;
+					if (Comp->CurrentFloor.bBlockingHit && Comp->CurrentFloor.FloorDist > MinFloorDist)
+					{
+						StandingLocation.Z -= Comp->CurrentFloor.FloorDist - MinFloorDist;
+						bEncroached = GetWorld()->OverlapBlockingTestByChannel(StandingLocation, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+					}
+				}				
+			}
+
+			if (!bEncroached)
+			{
+				// Commit the change in location.
+				Comp->UpdatedComponent->MoveComponent(StandingLocation - PawnLocation, Comp->UpdatedComponent->GetComponentQuat(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+				Comp->bForceNextFloorCheck = true;
+			}
+		}
+
+		// If still encroached then abort.
+		if (bEncroached)
+		{
+			return;
+		}
+
+		Comp->CharacterOwner->bIsCrouched = false;
+	}	
+	else
+	{
+		Comp->bShrinkProxyCapsule = true;
+	}
+
+	// Now call SetCapsuleSize() to cause touch/untouch events and actually grow the capsule
+	Comp->CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius(), DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight(), true);
+
+	const float MeshAdjust = ScaledHalfHeightAdjust;
+#if 0	// TODO ISPC
+	AdjustProxyCapsuleSize(Comp);
+#endif
+	Comp->CharacterOwner->OnEndCrouch( HalfHeightAdjust, ScaledHalfHeightAdjust );
+
+	// Don't smooth this change in mesh position
+	if (bClientSimulation && Comp->CharacterOwner->Role == ROLE_SimulatedProxy)
+	{
+#if 1	// TODO ISPC
+		unimplemented();
+#else
+		FNetworkPredictionData_Client_Character* ClientData = GetPredictionData_Client_Character();
+		if (ClientData && ClientData->MeshTranslationOffset.Z != 0.f)
+		{
+			ClientData->MeshTranslationOffset += FVector(0.f, 0.f, MeshAdjust);
+			ClientData->OriginalMeshTranslationOffset = ClientData->MeshTranslationOffset;
+		}
+#endif
+	}
+}
+
 // @todo UE4 - handle lift moving up and down through encroachment
 void UShooterUnrolledCppMovementSystem::UpdateBasedMovement(UShooterUnrolledCppMovement* Comp, float DeltaSeconds)
 {
@@ -2425,6 +3497,7 @@ void UShooterUnrolledCppMovementSystem::UpdateBasedMovement(UShooterUnrolledCppM
 			if (Comp->bFastAttachedMove)
 			{
 				// we're trusting no other obstacle can prevent the move here
+				// TODO ISPC: foreach_active
 				Comp->UpdatedComponent->SetWorldLocationAndRotation(NewWorldPos, FinalQuat, false);
 			}
 			else
@@ -2597,6 +3670,7 @@ bool UShooterUnrolledCppMovementSystem::MoveUpdatedComponent(UShooterUnrolledCpp
 	if (Comp->UpdatedComponent)
 	{
 		const FVector NewDelta = ConstrainDirectionToPlane(Comp, Delta);
+		// TODO ISPC: foreach_active
 		return Comp->UpdatedComponent->MoveComponent(NewDelta, NewRotation, bSweep, OutHit, Comp->MoveComponentFlags, Teleport);
 	}
 
@@ -2631,6 +3705,14 @@ FVector UShooterUnrolledCppMovementSystem::ConstrainNormalToPlane(UShooterUnroll
 	}
 
 	return Normal;
+}
+
+void UShooterUnrolledCppMovementSystem::SnapUpdatedComponentToPlane(UShooterUnrolledCppMovement* Comp)
+{
+	if (Comp->UpdatedComponent && Comp->bConstrainToPlane)
+	{
+		Comp->UpdatedComponent->SetWorldLocation( ConstrainLocationToPlane(Comp, Comp->UpdatedComponent->GetComponentLocation()) );
+	}
 }
 
 bool UShooterUnrolledCppMovementSystem::OverlapTest(UShooterUnrolledCppMovement* Comp, const FVector& Location, const FQuat& RotationQuat, const ECollisionChannel CollisionChannel, const FCollisionShape& CollisionShape, const AActor* IgnoreActor) const
@@ -2674,10 +3756,13 @@ void UShooterUnrolledCppMovementSystem::RestorePreAdditiveRootMotionVelocity(USh
 
 void UShooterUnrolledCppMovementSystem::ApplyRootMotionToVelocity(UShooterUnrolledCppMovement* Comp, float deltaTime)
 {
+#if 1	// TODO_ISPC
+	check(!HasRootMotionSources(Comp));
+#else
 	SCOPE_CYCLE_COUNTER(STAT_CharacterMovementRootMotionSourceApply);
 
 	// Animation root motion is distinct from root motion sources right now and takes precedence
-	if( Comp->HasAnimRootMotion() && deltaTime > 0.f )
+	if( HasAnimRootMotion(Comp) && deltaTime > 0.f )
 	{
 		Comp->Velocity = ConstrainAnimRootMotionVelocity(Comp, Comp->AnimRootMotionVelocity, Comp->Velocity);
 		return;
@@ -2742,6 +3827,7 @@ void UShooterUnrolledCppMovementSystem::ApplyRootMotionToVelocity(UShooterUnroll
 			SetMovementMode(Comp, MOVE_Falling);
 		}
 	}
+#endif	// TODO_ISPC
 }
 
 FVector UShooterUnrolledCppMovementSystem::ConstrainAnimRootMotionVelocity(UShooterUnrolledCppMovement* Comp, const FVector& RootMotionVelocity, const FVector& CurrentVelocity) const
@@ -2759,7 +3845,7 @@ FVector UShooterUnrolledCppMovementSystem::ConstrainAnimRootMotionVelocity(UShoo
 
 void UShooterUnrolledCppMovementSystem::ApplyVelocityBraking(UShooterUnrolledCppMovement* Comp, float DeltaTime, float Friction, float BrakingDeceleration)
 {
-	if (Comp->Velocity.IsZero() || !HasValidData(Comp) || Comp->HasAnimRootMotion() || DeltaTime < UCharacterMovementComponent::MIN_TICK_TIME)
+	if (Comp->Velocity.IsZero() || !HasValidData(Comp) || HasAnimRootMotion(Comp) || DeltaTime < UCharacterMovementComponent::MIN_TICK_TIME)
 	{
 		return;
 	}
@@ -2809,10 +3895,36 @@ void UShooterUnrolledCppMovementSystem::ApplyVelocityBraking(UShooterUnrolledCpp
 	}
 }
 
+void UShooterUnrolledCppMovementSystem::ApplyAccumulatedForces(UShooterUnrolledCppMovement* Comp, float DeltaSeconds)
+{
+	if (Comp->PendingImpulseToApply.Z != 0.f || Comp->PendingForceToApply.Z != 0.f)
+	{
+		// check to see if applied momentum is enough to overcome gravity
+		if ( IsMovingOnGround(Comp) && (Comp->PendingImpulseToApply.Z + (Comp->PendingForceToApply.Z * DeltaSeconds) + (GetGravityZ(Comp) * DeltaSeconds) > SMALL_NUMBER))
+		{
+			SetMovementMode(Comp, MOVE_Falling);
+		}
+	}
+
+	Comp->Velocity += Comp->PendingImpulseToApply + (Comp->PendingForceToApply * DeltaSeconds);
+	
+	// Don't call ClearAccumulatedForces() because it could affect launch velocity
+	Comp->PendingImpulseToApply = FVector::ZeroVector;
+	Comp->PendingForceToApply = FVector::ZeroVector;
+}
+
+void UShooterUnrolledCppMovementSystem::ClearAccumulatedForces(UShooterUnrolledCppMovement* Comp)
+{
+	Comp->PendingImpulseToApply = FVector::ZeroVector;
+	Comp->PendingForceToApply = FVector::ZeroVector;
+	Comp->PendingLaunchVelocity = FVector::ZeroVector;
+}
+
 void UShooterUnrolledCppMovementSystem::NotifyJumpApex(UShooterUnrolledCppMovement* Comp)
 {
 	if( Comp->CharacterOwner )
 	{
+		// TODO ISPC: foreach_active
 		Comp->CharacterOwner->NotifyJumpApex();
 	}
 }
@@ -2839,6 +3951,22 @@ FVector UShooterUnrolledCppMovementSystem::NewFallVelocity(UShooterUnrolledCppMo
 	return Result;
 }
 
+void UShooterUnrolledCppMovementSystem::StopActiveMovement(UShooterUnrolledCppMovement* Comp)
+{ 
+	// ISPC: Inlined Super::StopActiveMovement().
+	{
+		if (Comp->PathFollowingComp.IsValid() && Comp->bStopMovementAbortPaths)
+		{
+			// TODO ISPC: foreach_active
+			Comp->PathFollowingComp->AbortMove(*this, FPathFollowingResultFlags::MovementStop);
+		}
+	}
+
+	Comp->Acceleration = FVector::ZeroVector; 
+	Comp->bHasRequestedVelocity = false;
+	Comp->RequestedVelocity = FVector::ZeroVector;
+}
+
 void UShooterUnrolledCppMovementSystem::ProcessLanded(UShooterUnrolledCppMovement* Comp, const FHitResult& Hit, float remainingTime, int32 Iterations)
 {
 	SCOPE_CYCLE_COUNTER(STAT_CharProcessLanded);
@@ -2861,14 +3989,14 @@ void UShooterUnrolledCppMovementSystem::ProcessLanded(UShooterUnrolledCppMovemen
 			const bool bHasNavigationData = FindNavFloor(Comp, TestLocation, NavLocation);
 			if (!bHasNavigationData || NavLocation.NodeRef == INVALID_NAVNODEREF)
 			{
-				Comp->SetGroundMovementMode(MOVE_Walking);
+				SetGroundMovementMode(Comp, MOVE_Walking);
 				UE_LOG(LogUnrolledNavMeshMovement, Verbose, TEXT("ProcessLanded(): %s tried to go to NavWalking but couldn't find NavMesh! Using Walking instead."), *GetNameSafe(Comp->CharacterOwner));
 			}
 		}
 
 		SetPostLandedPhysics(Comp, Hit);
 	}
-	// TODO ISPC
+	// TODO ISPC: foreach_active?
 	if (Comp->PathFollowingComp.IsValid())
 	{
 		Comp->PathFollowingComp->OnLanded();
@@ -2915,14 +4043,11 @@ void UShooterUnrolledCppMovementSystem::HandleImpact(UShooterUnrolledCppMovement
 		Comp->CharacterOwner->MoveBlockedBy(Impact);
 	}
 
-#if 1	// TODO ISPC
-	check(!Comp->PathFollowingComp.IsValid());
-#else
-	if (PathFollowingComp.IsValid())
+	if (Comp->PathFollowingComp.IsValid())
 	{	// Also notify path following!
-		PathFollowingComp->OnMoveBlockedBy(Impact);
+		// TODO_ISPC: foreach_active
+		Comp->PathFollowingComp->OnMoveBlockedBy(Impact);
 	}
-#endif
 
 	APawn* OtherPawn = Cast<APawn>(Impact.GetActor());
 	if (OtherPawn)
@@ -2937,11 +4062,16 @@ void UShooterUnrolledCppMovementSystem::HandleImpact(UShooterUnrolledCppMovement
 	}
 }
 
+void UShooterUnrolledCppMovementSystem::UpdateComponentVelocity(UShooterUnrolledCppMovement* Comp)
+{
+	if ( Comp->UpdatedComponent )
+	{
+		Comp->UpdatedComponent->ComponentVelocity = Comp->Velocity;
+	}
+}
+
 void UShooterUnrolledCppMovementSystem::ApplyImpactPhysicsForces(UShooterUnrolledCppMovement* Comp, const FHitResult& Impact, const FVector& ImpactAcceleration, const FVector& ImpactVelocity)
 {
-#if 1	// TODO ISPC
-	Comp->ApplyImpactPhysicsForces(Impact, ImpactAcceleration, ImpactVelocity);
-#else
 	if (Comp->bEnablePhysicsInteraction && Impact.bBlockingHit )
 	{
 		if (UPrimitiveComponent* ImpactComponent = Impact.GetComponent())
@@ -2953,7 +4083,7 @@ void UShooterUnrolledCppMovementSystem::ApplyImpactPhysicsForces(UShooterUnrolle
 
 				const float BodyMass = FMath::Max(BI->GetBodyMass(), 1.0f);
 
-				if(bPushForceUsingZOffset)
+				if(Comp->bPushForceUsingZOffset)
 				{
 					FBox Bounds = BI->GetBodyBounds();
 
@@ -2962,7 +4092,7 @@ void UShooterUnrolledCppMovementSystem::ApplyImpactPhysicsForces(UShooterUnrolle
 
 					if (!Extents.IsNearlyZero())
 					{
-						ForcePoint.Z = Center.Z + Extents.Z * PushForcePointZOffsetFactor;
+						ForcePoint.Z = Center.Z + Extents.Z * Comp->PushForcePointZOffsetFactor;
 					}
 				}
 
@@ -2971,11 +4101,11 @@ void UShooterUnrolledCppMovementSystem::ApplyImpactPhysicsForces(UShooterUnrolle
 				float PushForceModificator = 1.0f;
 
 				const FVector ComponentVelocity = ImpactComponent->GetPhysicsLinearVelocity();
-				const FVector VirtualVelocity = ImpactAcceleration.IsZero() ? ImpactVelocity : ImpactAcceleration.GetSafeNormal() * GetMaxSpeed();
+				const FVector VirtualVelocity = ImpactAcceleration.IsZero() ? ImpactVelocity : ImpactAcceleration.GetSafeNormal() * GetMaxSpeed(Comp);
 
 				float Dot = 0.0f;
 
-				if (bScalePushForceToVelocity && !ComponentVelocity.IsNearlyZero())
+				if (Comp->bScalePushForceToVelocity && !ComponentVelocity.IsNearlyZero())
 				{			
 					Dot = ComponentVelocity | VirtualVelocity;
 
@@ -2985,7 +4115,7 @@ void UShooterUnrolledCppMovementSystem::ApplyImpactPhysicsForces(UShooterUnrolle
 					}
 				}
 
-				if (bPushForceScaledToMass)
+				if (Comp->bPushForceScaledToMass)
 				{
 					PushForceModificator *= BodyMass;
 				}
@@ -2994,22 +4124,25 @@ void UShooterUnrolledCppMovementSystem::ApplyImpactPhysicsForces(UShooterUnrolle
 
 				if (ComponentVelocity.IsNearlyZero())
 				{
-					Force *= InitialPushForceFactor;
+					Force *= Comp->InitialPushForceFactor;
 					ImpactComponent->AddImpulseAtLocation(Force, ForcePoint, Impact.BoneName);
 				}
 				else
 				{
-					Force *= PushForceFactor;
+					Force *= Comp->PushForceFactor;
 					ImpactComponent->AddForceAtLocation(Force, ForcePoint, Impact.BoneName);
 				}
 			}
 		}
 	}
-#endif
 }
 
 bool UShooterUnrolledCppMovementSystem::FindNavFloor(UShooterUnrolledCppMovement* Comp, const FVector& TestLocation, FNavLocation& NavFloorLocation) const
 {
+#if 1	// TODO ISPC
+	unimplemented();
+	return false;
+#else
 	const ANavigationData* NavData = Comp->GetNavData();
 	if (NavData == nullptr)
 	{
@@ -3027,6 +4160,96 @@ bool UShooterUnrolledCppMovementSystem::FindNavFloor(UShooterUnrolledCppMovement
 	}
 
 	return NavData->ProjectPoint(TestLocation, NavFloorLocation, FVector(SearchRadius, SearchRadius, SearchHeight));
+#endif
+}
+
+float UShooterUnrolledCppMovementSystem::SlideAlongSurface(UShooterUnrolledCppMovement* Comp, const FVector& Delta, float Time, const FVector& InNormal, FHitResult& Hit, bool bHandleImpact)
+{
+	if (!Hit.bBlockingHit)
+	{
+		return 0.f;
+	}
+
+	FVector Normal(InNormal);
+	if (IsMovingOnGround(Comp))
+	{
+		// We don't want to be pushed up an unwalkable surface.
+		if (Normal.Z > 0.f)
+		{
+			if (!IsWalkable(Hit, Comp->GetWalkableFloorZ()))
+			{
+				Normal = Normal.GetSafeNormal2D();
+			}
+		}
+		else if (Normal.Z < -KINDA_SMALL_NUMBER)
+		{
+			// Don't push down into the floor when the impact is on the upper portion of the capsule.
+			if (Comp->CurrentFloor.FloorDist < UCharacterMovementComponent::MIN_FLOOR_DIST && Comp->CurrentFloor.bBlockingHit)
+			{
+				const FVector FloorNormal = Comp->CurrentFloor.HitResult.Normal;
+				const bool bFloorOpposedToMovement = (Delta | FloorNormal) < 0.f && (FloorNormal.Z < 1.f - DELTA);
+				if (bFloorOpposedToMovement)
+				{
+					Normal = FloorNormal;
+				}
+				
+				Normal = Normal.GetSafeNormal2D();
+			}
+		}
+	}
+
+	// ISPC: Inlined call to Super::SlideAlongSurface().
+	{
+		if (!Hit.bBlockingHit)
+		{
+			return 0.f;
+		}
+
+		float PercentTimeApplied = 0.f;
+		const FVector OldHitNormal = Normal;
+
+		FVector SlideDelta = ComputeSlideVector(Comp, Delta, Time, Normal, Hit);
+
+		if ((SlideDelta | Delta) > 0.f)
+		{
+			const FQuat Rotation = Comp->UpdatedComponent->GetComponentQuat();
+			const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap = !!CVars::MoveIgnoreFirstBlockingOverlap->GetInt();
+			SafeMoveUpdatedComponent(Comp, bMoveIgnoreFirstBlockingOverlap, SlideDelta, Rotation, true, Hit);
+
+			const float FirstHitPercent = Hit.Time;
+			PercentTimeApplied = FirstHitPercent;
+			if (Hit.IsValidBlockingHit())
+			{
+				// Notify first impact
+				if (bHandleImpact)
+				{
+					HandleImpact(Comp, Hit, FirstHitPercent * Time, SlideDelta);
+				}
+
+				// Compute new slide normal when hitting multiple surfaces.
+				TwoWallAdjust(Comp, SlideDelta, Hit, OldHitNormal);
+
+				// Only proceed if the new direction is of significant length and not in reverse of original attempted move.
+				if (!SlideDelta.IsNearlyZero(1e-3f) && (SlideDelta | Delta) > 0.f)
+				{
+					// Perform second move
+					SafeMoveUpdatedComponent(Comp, bMoveIgnoreFirstBlockingOverlap, SlideDelta, Rotation, true, Hit);
+					const float SecondHitPercent = Hit.Time * (1.f - FirstHitPercent);
+					PercentTimeApplied += SecondHitPercent;
+
+					// Notify second impact
+					if (bHandleImpact && Hit.bBlockingHit)
+					{
+						HandleImpact(Comp, Hit, SecondHitPercent * Time, SlideDelta);
+					}
+				}
+			}
+
+			return FMath::Clamp(PercentTimeApplied, 0.f, 1.f);
+		}
+
+		return 0.f;
+	}
 }
 
 void UShooterUnrolledCppMovementSystem::TwoWallAdjust(UShooterUnrolledCppMovement* Comp, FVector& InOutDelta, const FHitResult& Hit, const FVector& OldHitNormal) const
@@ -3248,6 +4471,20 @@ void UShooterUnrolledCppMovementSystem::NotifyBumpedPawn(UShooterUnrolledCppMove
 	Comp->AvoidanceLockTimer = 0.0f;
 }
 
+void UShooterUnrolledCppMovementSystem::StopMovementImmediately(UShooterUnrolledCppMovement* Comp)
+{
+	Comp->Velocity = FVector::ZeroVector;
+	UpdateComponentVelocity(Comp);
+	StopActiveMovement(Comp);
+}
+
+void UShooterUnrolledCppMovementSystem::StopMovementKeepPathing(UShooterUnrolledCppMovement* Comp)
+{
+	Comp->bStopMovementAbortPaths = false;
+	StopMovementImmediately(Comp);
+	Comp->bStopMovementAbortPaths = true;
+}
+
 bool UShooterUnrolledCppMovementSystem::ApplyRequestedMove(UShooterUnrolledCppMovement* Comp, float DeltaTime, float MaxAccel, float MaxSpeed, float Friction, float BrakingDeceleration, FVector& OutAcceleration, float& OutRequestedSpeed)
 {
 	if (Comp->bHasRequestedVelocity)
@@ -3293,4 +4530,120 @@ bool UShooterUnrolledCppMovementSystem::ApplyRequestedMove(UShooterUnrolledCppMo
 	}
 
 	return false;
+}
+
+float GetAxisDeltaRotation(float InAxisRotationRate, float DeltaTime)
+{
+	return (InAxisRotationRate >= 0.f) ? (InAxisRotationRate * DeltaTime) : 360.f;
+}
+
+FRotator UShooterUnrolledCppMovementSystem::GetDeltaRotation(UShooterUnrolledCppMovement* Comp, float DeltaTime) const
+{
+	return FRotator(GetAxisDeltaRotation(Comp->RotationRate.Pitch, DeltaTime), GetAxisDeltaRotation(Comp->RotationRate.Yaw, DeltaTime), GetAxisDeltaRotation(Comp->RotationRate.Roll, DeltaTime));
+}
+
+FRotator UShooterUnrolledCppMovementSystem::ComputeOrientToMovementRotation(UShooterUnrolledCppMovement* Comp, const FRotator& CurrentRotation, float DeltaTime, FRotator& DeltaRotation) const
+{
+	if (Comp->Acceleration.SizeSquared() < KINDA_SMALL_NUMBER)
+	{
+		// AI path following request can orient us in that direction (it's effectively an acceleration)
+		if (Comp->bHasRequestedVelocity && Comp->RequestedVelocity.SizeSquared() > KINDA_SMALL_NUMBER)
+		{
+			return Comp->RequestedVelocity.GetSafeNormal().Rotation();
+		}
+
+		// Don't change rotation if there is no acceleration.
+		return CurrentRotation;
+	}
+
+	// Rotate toward direction of acceleration.
+	return Comp->Acceleration.GetSafeNormal().Rotation();
+}
+
+bool UShooterUnrolledCppMovementSystem::ShouldRemainVertical(UShooterUnrolledCppMovement* Comp) const
+{
+	// Always remain vertical when walking or falling.
+	return IsMovingOnGround(Comp) || IsFalling(Comp);
+}
+
+void UShooterUnrolledCppMovementSystem::PhysicsRotation(UShooterUnrolledCppMovement* Comp, float DeltaTime)
+{
+	if (!(Comp->bOrientRotationToMovement || Comp->bUseControllerDesiredRotation))
+	{
+		return;
+	}
+
+	if (!HasValidData(Comp) || (!Comp->CharacterOwner->Controller && !Comp->bRunPhysicsWithNoController))
+	{
+		return;
+	}
+
+	FRotator CurrentRotation = Comp->UpdatedComponent->GetComponentRotation(); // Normalized
+	CurrentRotation.DiagnosticCheckNaN(TEXT("CharacterMovementComponent::PhysicsRotation(): CurrentRotation"));
+
+	FRotator DeltaRot = GetDeltaRotation(Comp, DeltaTime);
+	DeltaRot.DiagnosticCheckNaN(TEXT("CharacterMovementComponent::PhysicsRotation(): GetDeltaRotation"));
+
+	FRotator DesiredRotation = CurrentRotation;
+	if (Comp->bOrientRotationToMovement)
+	{
+		DesiredRotation = ComputeOrientToMovementRotation(Comp, CurrentRotation, DeltaTime, DeltaRot);
+	}
+	else if (Comp->CharacterOwner->Controller && Comp->bUseControllerDesiredRotation)
+	{
+		DesiredRotation = Comp->CharacterOwner->Controller->GetDesiredRotation();
+	}
+	else
+	{
+		return;
+	}
+
+	if (ShouldRemainVertical(Comp))
+	{
+		DesiredRotation.Pitch = 0.f;
+		DesiredRotation.Yaw = FRotator::NormalizeAxis(DesiredRotation.Yaw);
+		DesiredRotation.Roll = 0.f;
+	}
+	else
+	{
+		DesiredRotation.Normalize();
+	}
+	
+	// Accumulate a desired new rotation.
+	const float AngleTolerance = 1e-3f;
+
+	if (!CurrentRotation.Equals(DesiredRotation, AngleTolerance))
+	{
+		// PITCH
+		if (!FMath::IsNearlyEqual(CurrentRotation.Pitch, DesiredRotation.Pitch, AngleTolerance))
+		{
+			DesiredRotation.Pitch = FMath::FixedTurn(CurrentRotation.Pitch, DesiredRotation.Pitch, DeltaRot.Pitch);
+		}
+
+		// YAW
+		if (!FMath::IsNearlyEqual(CurrentRotation.Yaw, DesiredRotation.Yaw, AngleTolerance))
+		{
+			DesiredRotation.Yaw = FMath::FixedTurn(CurrentRotation.Yaw, DesiredRotation.Yaw, DeltaRot.Yaw);
+		}
+
+		// ROLL
+		if (!FMath::IsNearlyEqual(CurrentRotation.Roll, DesiredRotation.Roll, AngleTolerance))
+		{
+			DesiredRotation.Roll = FMath::FixedTurn(CurrentRotation.Roll, DesiredRotation.Roll, DeltaRot.Roll);
+		}
+
+		// Set the new rotation.
+		DesiredRotation.DiagnosticCheckNaN(TEXT("CharacterMovementComponent::PhysicsRotation(): DesiredRotation"));
+		MoveUpdatedComponent( Comp, FVector::ZeroVector, DesiredRotation.Quaternion(), true );
+	}
+}
+
+bool UShooterUnrolledCppMovementSystem::HasRootMotionSources(UShooterUnrolledCppMovement* Comp) const
+{
+	return Comp->CurrentRootMotion.HasActiveRootMotionSources() || (Comp->CharacterOwner && Comp->CharacterOwner->IsPlayingRootMotion() && Comp->CharacterOwner->GetMesh());
+}
+
+bool UShooterUnrolledCppMovementSystem::HasAnimRootMotion(UShooterUnrolledCppMovement* Comp) const
+{
+	return Comp->RootMotionParams.bHasRootMotion;
 }
