@@ -162,11 +162,6 @@ public class ShooterGame : ModuleRules
 		Debug.Assert(bISPCHasBeenSetupInTarget, string.Format("`{0}.SetupISPCRules(this);` needs to be called first from target {1}", GetType().ToString(), Target.Name));
 		PublicAdditionalLibraries.AddRange(ISPCObjects);
 		PublicAdditionalShadowFiles.AddRange(ISPCObjects);
-
-		// FIXME: These shouldn't be necessary, but I still haven't found a proper way to relink the module when ISPC is rebuilt.
-		/*ExternalDependencies.AddRange(ISPCAbsoluteSources);
-		ExternalDependencies.AddRange(ISPCObjects);
-		ExternalDependencies.AddRange(ISPCHeaders);*/
 	}
 
 	public ShooterGame(ReadOnlyTargetRules Target) : base(Target)
