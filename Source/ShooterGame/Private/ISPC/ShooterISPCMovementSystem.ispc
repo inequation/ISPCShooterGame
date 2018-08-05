@@ -40,13 +40,15 @@ bool FVector_Equal(FVector A, FVector B)
 
 FVector GetUpdatedComponentLocation(FISPCMovementContext Ctx)
 {
-	unimplemented();
+	return GetUpdatedComponentLocation(CtxAccess(Comp));
 }
 
 bool IsValid(const ACharacter* Test)
 {
-	// TODO ISPC: Implement IsPendingKill()? Probably needs a callback to C++.
-	return Test;// && !IsPendingKill(Test);
+	if (Test)
+	{
+		return !IsPendingKill(Test);
+	}
 }
 
 bool HasValidData(const varying FISPCMovementContext Ctx)
@@ -212,16 +214,18 @@ static bool IsWithinEdgeTolerance(const FVector& CapsuleLocation, const FVector&
 	const float ReducedRadiusSq = FMath::Square(FMath::Max(UCharacterMovementComponent::SWEEP_EDGE_REJECT_DISTANCE + KINDA_SMALL_NUMBER, CapsuleRadius - UCharacterMovementComponent::SWEEP_EDGE_REJECT_DISTANCE));
 	return DistFromCenterSq < ReducedRadiusSq;
 }
+#endif
 
 static void InitCollisionParams(FISPCMovementContext Ctx, FCollisionQueryParams &OutParams, FCollisionResponseParams& OutResponseParam)
 {
-	if (Comp->UpdatedPrimitive)
+	if (CtxAccess(UpdatedPrimitive))
 	{
 		// TODO ISPC: foreach_active
 		Comp->UpdatedPrimitive->InitSweepCollisionParams(OutParams, OutResponseParam);
 	}
 }
 
+#if UNIMPLEMENTED_CODE
 void FSystemTickFunction::ExecuteTick(float DeltaTime, ELevelTick TickType, ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent)
 {
 	check(IsValid(System));	// Apparently, we can get here from a spurious tick?
@@ -428,6 +432,314 @@ void SetUpdatedComponent(FISPCMovementContext Ctx, USceneComponent* NewUpdatedCo
 }
 #endif
 
+bool IsFlying(FISPCMovementContext Ctx)
+{
+	return (CtxAccess(MovementMode) == MOVE_Flying) && CtxAccess(UpdatedComponent);
+}
+
+bool IsFalling(FISPCMovementContext Ctx)
+{
+	return (CtxAccess(MovementMode) == MOVE_Falling) && CtxAccess(UpdatedComponent);
+}
+
+bool IsSwimming(FISPCMovementContext Ctx)
+{
+	return (CtxAccess(MovementMode) == MOVE_Swimming) && CtxAccess(UpdatedComponent);
+}
+
+bool IsCrouching(FISPCMovementContext Ctx)
+{
+	return CtxAccess(CharacterOwner) && CtxAccess(CharacterOwner_bIsCrouched);
+}
+
+bool CanCrouchInCurrentState(FISPCMovementContext Ctx)
+{
+	if (!CtxAccess(NavAgentProps_bCanCrouch))	// ISPC: Inlined call to UNavMovementComponent::CanEverCrouch().
+	{
+		return false;
+	}
+
+	return IsFalling(Ctx) || IsMovingOnGround(Ctx);
+}
+
+void Crouch(FISPCMovementContext Ctx, bool bClientSimulation)
+{
+	if (!HasValidData(Ctx))
+	{
+		return;
+	}
+
+	if (!bClientSimulation && !CanCrouchInCurrentState(Ctx))
+	{
+		return;
+	}
+
+	// See if collision is already at desired size.
+	if (CtxAccess(CharacterOwner_CapsuleComponent_Size).y == CtxAccess(CrouchedHalfHeight))
+	{
+		if (!bClientSimulation)
+		{
+			SetCharacterOwner_bIsCrouched(CtxAccess(Comp), true);
+			// ISPC: Mirror into our own data.
+			CtxAccess(CharacterOwner_bIsCrouched) = true;
+		}
+		CharacterOwner_OnStartCrouch( CtxAccess(Comp), 0.f, 0.f );
+		return;
+	}
+
+	if (bClientSimulation && CtxAccess(CharacterOwner_Role) == ROLE_SimulatedProxy)
+	{
+		// restore collision size before crouching
+		RestoreDefaultCapsuleSize(Comp->CharacterOwner);
+		// ISPC: Mirror to local data.
+		CtxAccess(CharacterOwner_CapsuleComponent_Size).x = CtxAccess(DefaultCharacter_CapsuleComponent_UnscaledSize).x;
+		CtxAccess(CharacterOwner_CapsuleComponent_Size).y = CtxAccess(DefaultCharacter_CapsuleComponent_UnscaledSize).y;
+
+		CtxAccess(bShrinkProxyCapsule) = true;
+	}
+
+	// Change collision size to crouching dimensions
+	const float<3> OldSize = CtxAccess(CharacterOwner_CapsuleComponent_Size);
+	// Height is not allowed to be smaller than radius.
+	const float ClampedCrouchedHalfHeight = max(0.f, max(OldSize.x, CtxAccess(CrouchedHalfHeight)));
+	SetCapsuleSize(CtxAccess(CharacterOwner), OldSize.x, ClampedCrouchedHalfHeight);
+	// ISPC: Mirror to local data.
+	CtxAccess(CharacterOwner_CapsuleComponent_Size).y = ClampedCrouchedHalfHeight;
+	float HalfHeightAdjust = (OldSize.y - ClampedCrouchedHalfHeight);
+	float ScaledHalfHeightAdjust = HalfHeightAdjust * OldSize.z;
+
+	if( !bClientSimulation )
+	{
+		// Crouching to a larger height? (this is rare)
+		if (ClampedCrouchedHalfHeight > OldSize.y)
+		{
+			FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(CrouchTrace), false, Comp->CharacterOwner);
+			FCollisionResponseParams ResponseParam;
+			InitCollisionParams(Comp, CapsuleParams, ResponseParam);
+			const bool bEncroached = GetWorld()->OverlapBlockingTestByChannel(GetUpdatedComponentLocation(Ctx) - FVector(0.f,0.f,ScaledHalfHeightAdjust), FQuat::Identity,
+				Comp->UpdatedComponent->GetCollisionObjectType(), Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_None), CapsuleParams, ResponseParam);
+
+			// If encroached, cancel
+			if( bEncroached )
+			{
+				Comp->CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(OldUnscaledRadius, OldUnscaledHalfHeight);
+				return;
+			}
+		}
+
+		if (Comp->bCrouchMaintainsBaseLocation)
+		{
+			// Intentionally not using MoveUpdatedComponent, where a horizontal plane constraint would prevent the base of the capsule from staying at the same spot.
+			Comp->UpdatedComponent->MoveComponent(FVector(0.f, 0.f, -ScaledHalfHeightAdjust), Comp->UpdatedComponent->GetComponentQuat(), true, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+		}
+
+		Comp->CharacterOwner->bIsCrouched = true;
+	}
+
+	Comp->bForceNextFloorCheck = true;
+
+	// OnStartCrouch takes the change from the Default size, not the current one (though they are usually the same).
+	const float MeshAdjust = ScaledHalfHeightAdjust;
+	// TODO ISPC: Cache this.
+	ACharacter* DefaultCharacter = Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>();
+	HalfHeightAdjust = (DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() - ClampedCrouchedHalfHeight);
+	ScaledHalfHeightAdjust = HalfHeightAdjust * ComponentScale;
+
+#if 0	// TODO ISPC
+	AdjustProxyCapsuleSize(Comp);
+#endif
+	// TODO ISPC: foreach_active
+	Comp->CharacterOwner->OnStartCrouch( HalfHeightAdjust, ScaledHalfHeightAdjust );
+
+	// Don't smooth this change in mesh position
+	if (bClientSimulation && Comp->CharacterOwner->Role == ROLE_SimulatedProxy)
+	{
+#if 1	// TODO ISPC
+		unimplemented();
+#else
+		FNetworkPredictionData_Client_Character* ClientData = GetPredictionData_Client_Character();
+		if (ClientData && ClientData->MeshTranslationOffset.Z != 0.f)
+		{
+			ClientData->MeshTranslationOffset -= FVector(0.f, 0.f, MeshAdjust);
+			ClientData->OriginalMeshTranslationOffset = ClientData->MeshTranslationOffset;
+		}
+#endif
+	}
+}
+
+void UnCrouch(FISPCMovementContext Ctx, bool bClientSimulation)
+{
+	if (!HasValidData(Comp))
+	{
+		return;
+	}
+
+	// TODO ISPC: Cache this.
+	ACharacter* DefaultCharacter = Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>();
+
+	// See if collision is already at desired size.
+	if( Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() == DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() )
+	{
+		if (!bClientSimulation)
+		{
+			Comp->CharacterOwner->bIsCrouched = false;
+		}
+		Comp->CharacterOwner->OnEndCrouch( 0.f, 0.f );
+		return;
+	}
+
+	const float CurrentCrouchedHalfHeight = Comp->CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+
+	const float ComponentScale = Comp->CharacterOwner->GetCapsuleComponent()->GetShapeScale();
+	const float OldUnscaledHalfHeight = Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
+	const float HalfHeightAdjust = DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() - OldUnscaledHalfHeight;
+	const float ScaledHalfHeightAdjust = HalfHeightAdjust * ComponentScale;
+	const FVector PawnLocation = GetUpdatedComponentLocation(Ctx);
+
+	// Grow to uncrouched size.
+	check(Comp->CharacterOwner->GetCapsuleComponent());
+
+	if( !bClientSimulation )
+	{
+		// Try to stay in place and see if the larger capsule fits. We use a slightly taller capsule to avoid penetration.
+		const float SweepInflation = KINDA_SMALL_NUMBER * 10.f;
+		FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(CrouchTrace), false, Comp->CharacterOwner);
+		FCollisionResponseParams ResponseParam;
+		InitCollisionParams(Comp, CapsuleParams, ResponseParam);
+
+		// Compensate for the difference between current capsule size and standing size
+		const FCollisionShape StandingCapsuleShape = Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_HeightCustom, -SweepInflation - ScaledHalfHeightAdjust); // Shrink by negative amount, so actually grow it.
+		const ECollisionChannel CollisionChannel = Comp->UpdatedComponent->GetCollisionObjectType();
+		bool bEncroached = true;
+
+		if (!Comp->bCrouchMaintainsBaseLocation)
+		{
+			// Expand in place
+			bEncroached = GetWorld()->OverlapBlockingTestByChannel(PawnLocation, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+		
+			if (bEncroached)
+			{
+				// Try adjusting capsule position to see if we can avoid encroachment.
+				if (ScaledHalfHeightAdjust > 0.f)
+				{
+					// Shrink to a short capsule, sweep down to base to find where that would hit something, and then try to stand up from there.
+					float PawnRadius, PawnHalfHeight;
+					Comp->CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleSize(PawnRadius, PawnHalfHeight);
+					const float ShrinkHalfHeight = PawnHalfHeight - PawnRadius;
+					const float TraceDist = PawnHalfHeight - ShrinkHalfHeight;
+					const FVector Down = FVector(0.f, 0.f, -TraceDist);
+
+					FHitResult Hit(1.f);
+					const FCollisionShape ShortCapsuleShape = Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_HeightCustom, ShrinkHalfHeight);
+					const bool bBlockingHit = GetWorld()->SweepSingleByChannel(Hit, PawnLocation, PawnLocation + Down, FQuat::Identity, CollisionChannel, ShortCapsuleShape, CapsuleParams);
+					if (Hit.bStartPenetrating)
+					{
+						bEncroached = true;
+					}
+					else
+					{
+						// Compute where the base of the sweep ended up, and see if we can stand there
+						const float DistanceToBase = (Hit.Time * TraceDist) + ShortCapsuleShape.Capsule.HalfHeight;
+						const FVector NewLoc = FVector(PawnLocation.X, PawnLocation.Y, PawnLocation.Z - DistanceToBase + PawnHalfHeight + SweepInflation + UCharacterMovementComponent::MIN_FLOOR_DIST / 2.f);
+						bEncroached = GetWorld()->OverlapBlockingTestByChannel(NewLoc, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+						if (!bEncroached)
+						{
+							// Intentionally not using MoveUpdatedComponent, where a horizontal plane constraint would prevent the base of the capsule from staying at the same spot.
+							Comp->UpdatedComponent->MoveComponent(NewLoc - PawnLocation, Comp->UpdatedComponent->GetComponentQuat(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			// Expand while keeping base location the same.
+			FVector StandingLocation = PawnLocation + FVector(0.f, 0.f, StandingCapsuleShape.GetCapsuleHalfHeight() - CurrentCrouchedHalfHeight);
+			bEncroached = GetWorld()->OverlapBlockingTestByChannel(StandingLocation, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+
+			if (bEncroached)
+			{
+				if (IsMovingOnGround(Comp))
+				{
+					// Something might be just barely overhead, try moving down closer to the floor to avoid it.
+					const float MinFloorDist = KINDA_SMALL_NUMBER * 10.f;
+					if (Comp->CurrentFloor.bBlockingHit && Comp->CurrentFloor.FloorDist > MinFloorDist)
+					{
+						StandingLocation.Z -= Comp->CurrentFloor.FloorDist - MinFloorDist;
+						bEncroached = GetWorld()->OverlapBlockingTestByChannel(StandingLocation, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
+					}
+				}				
+			}
+
+			if (!bEncroached)
+			{
+				// Commit the change in location.
+				Comp->UpdatedComponent->MoveComponent(StandingLocation - PawnLocation, Comp->UpdatedComponent->GetComponentQuat(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+				Comp->bForceNextFloorCheck = true;
+			}
+		}
+
+		// If still encroached then abort.
+		if (bEncroached)
+		{
+			return;
+		}
+
+		Comp->CharacterOwner->bIsCrouched = false;
+	}	
+	else
+	{
+		Comp->bShrinkProxyCapsule = true;
+	}
+
+	// Now call SetCapsuleSize() to cause touch/untouch events and actually grow the capsule
+	Comp->CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius(), DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight(), true);
+
+	const float MeshAdjust = ScaledHalfHeightAdjust;
+#if 0	// TODO ISPC
+	AdjustProxyCapsuleSize(Comp);
+#endif
+	Comp->CharacterOwner->OnEndCrouch( HalfHeightAdjust, ScaledHalfHeightAdjust );
+
+	// Don't smooth this change in mesh position
+	if (bClientSimulation && Comp->CharacterOwner->Role == ROLE_SimulatedProxy)
+	{
+#if 1	// TODO ISPC
+		unimplemented();
+#else
+		FNetworkPredictionData_Client_Character* ClientData = GetPredictionData_Client_Character();
+		if (ClientData && ClientData->MeshTranslationOffset.Z != 0.f)
+		{
+			ClientData->MeshTranslationOffset += FVector(0.f, 0.f, MeshAdjust);
+			ClientData->OriginalMeshTranslationOffset = ClientData->MeshTranslationOffset;
+		}
+#endif
+	}
+}
+
+void UpdateCharacterStateBeforeMovement(FISPCMovementContext Ctx)
+{
+	// Check for a change in crouch state. Players toggle crouch by changing bWantsToCrouch.
+	const bool bAllowedToCrouch = CanCrouchInCurrentState(Ctx);
+	if ((!bAllowedToCrouch || !CtxAccess(bWantsToCrouch)) && IsCrouching(Ctx))
+	{
+		UnCrouch(Ctx, false);
+	}
+	else if (CtxAccess(bWantsToCrouch) && bAllowedToCrouch && !IsCrouching(Ctx))
+	{
+		Crouch(Ctx, false);
+	}
+}
+
+void UpdateCharacterStateAfterMovement(FISPCMovementContext Ctx)
+{
+	// Uncrouch if no longer allowed to be crouched
+	if (IsCrouching(Comp) && !CanCrouchInCurrentState(Comp))
+	{
+		UnCrouch(Comp, false);
+	}
+}
+
 void PerformMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 {
 	SCOPE_CYCLE_COUNTER(STAT_CharacterMovementPerformMovement);
@@ -521,7 +833,6 @@ void PerformMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 
 		ApplyAccumulatedForces(Ctx, DeltaSeconds);
 
-#if UNIMPLEMENTED_CODE	// TODO ISPC Actual
 		// Update the character state before we do our movement
 		UpdateCharacterStateBeforeMovement(Ctx);
 
@@ -748,7 +1059,6 @@ void PerformMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 #if 0	// TODO ISPC: This is an empty method, don't call at all for now.
 		Comp->OnMovementUpdated(DeltaSeconds, OldLocation, OldVelocity);
 #endif
-#endif	// TODO ISPC Actual
 	} // End scoped movement update
 
 #if UNIMPLEMENTED_CODE	// TODO ISPC Actual
@@ -819,29 +1129,6 @@ void CallMovementUpdateDelegate(FISPCMovementContext Ctx, float DeltaTime, const
 	}
 }
 
-void UpdateCharacterStateBeforeMovement(FISPCMovementContext Ctx)
-{
-	// Check for a change in crouch state. Players toggle crouch by changing bWantsToCrouch.
-	const bool bAllowedToCrouch = CanCrouchInCurrentState(Comp);
-	if ((!bAllowedToCrouch || !Comp->bWantsToCrouch) && IsCrouching(Comp))
-	{
-		UnCrouch(Comp, false);
-	}
-	else if (Comp->bWantsToCrouch && bAllowedToCrouch && !IsCrouching(Comp))
-	{
-		Crouch(Comp, false);
-	}
-}
-
-void UpdateCharacterStateAfterMovement(FISPCMovementContext Ctx)
-{
-	// Uncrouch if no longer allowed to be crouched
-	if (IsCrouching(Comp) && !CanCrouchInCurrentState(Comp))
-	{
-		UnCrouch(Comp, false);
-	}
-}
-
 void StartNewPhysics(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 {
 	if ((deltaTime < UCharacterMovementComponent::MIN_TICK_TIME) || (Iterations >= Comp->MaxSimulationIterations) || !HasValidData(Comp))
@@ -891,26 +1178,6 @@ void StartNewPhysics(FISPCMovementContext Ctx, float deltaTime, int32 Iterations
 	{
 		SetUpdatedComponent(Comp, Comp->DeferredUpdatedMoveComponent);
 	}
-}
-
-bool IsFlying(FISPCMovementContext Ctx) const
-{
-	return (Comp->MovementMode == MOVE_Flying) && Comp->UpdatedComponent;
-}
-
-bool IsFalling(FISPCMovementContext Ctx) const
-{
-	return (Comp->MovementMode == MOVE_Falling) && Comp->UpdatedComponent;
-}
-
-bool IsSwimming(FISPCMovementContext Ctx) const
-{
-	return (Comp->MovementMode == MOVE_Swimming) && Comp->UpdatedComponent;
-}
-
-bool IsCrouching(FISPCMovementContext Ctx) const
-{
-	return Comp->CharacterOwner && Comp->CharacterOwner->bIsCrouched;
 }
 
 APhysicsVolume* GetPhysicsVolume(FISPCMovementContext Ctx) const
@@ -3125,271 +3392,6 @@ void SaveBaseLocation(FISPCMovementContext Ctx)
 			const FRotator RelativeRotation = (FQuatRotationMatrix(Comp->UpdatedComponent->GetComponentQuat()) * FQuatRotationMatrix(Comp->OldBaseQuat).GetTransposed()).Rotator();
 			Comp->CharacterOwner->SaveRelativeBasedMovement(RelativeLocation, RelativeRotation, true);
 		}
-	}
-}
-
-bool CanCrouchInCurrentState(FISPCMovementContext Ctx) const
-{
-	if (!Comp->NavAgentProps.bCanCrouch)	// ISPC: Inlined call to UNavMovementComponent::CanEverCrouch().
-	{
-		return false;
-	}
-
-	return IsFalling(Comp) || IsMovingOnGround(Comp);
-}
-
-
-void Crouch(FISPCMovementContext Ctx, bool bClientSimulation)
-{
-	if (!HasValidData(Comp))
-	{
-		return;
-	}
-
-	if (!bClientSimulation && !CanCrouchInCurrentState(Comp))
-	{
-		return;
-	}
-
-	// See if collision is already at desired size.
-	if (Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() == Comp->CrouchedHalfHeight)
-	{
-		if (!bClientSimulation)
-		{
-			Comp->CharacterOwner->bIsCrouched = true;
-		}
-		// TODO ISPC: foreach_active
-		Comp->CharacterOwner->OnStartCrouch( 0.f, 0.f );
-		return;
-	}
-
-	if (bClientSimulation && Comp->CharacterOwner->Role == ROLE_SimulatedProxy)
-	{
-		// restore collision size before crouching
-		// TODO ISPC: Cache this.
-		ACharacter* DefaultCharacter = Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>();
-		// TODO ISPC: foreach_active
-		Comp->CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius(), DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight());
-		Comp->bShrinkProxyCapsule = true;
-	}
-
-	// Change collision size to crouching dimensions
-	const float ComponentScale = Comp->CharacterOwner->GetCapsuleComponent()->GetShapeScale();
-	const float OldUnscaledHalfHeight = Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
-	const float OldUnscaledRadius = Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleRadius();
-	// Height is not allowed to be smaller than radius.
-	const float ClampedCrouchedHalfHeight = FMath::Max3(0.f, OldUnscaledRadius, Comp->CrouchedHalfHeight);
-	Comp->CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(OldUnscaledRadius, ClampedCrouchedHalfHeight);
-	float HalfHeightAdjust = (OldUnscaledHalfHeight - ClampedCrouchedHalfHeight);
-	float ScaledHalfHeightAdjust = HalfHeightAdjust * ComponentScale;
-
-	if( !bClientSimulation )
-	{
-		// Crouching to a larger height? (this is rare)
-		if (ClampedCrouchedHalfHeight > OldUnscaledHalfHeight)
-		{
-			FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(CrouchTrace), false, Comp->CharacterOwner);
-			FCollisionResponseParams ResponseParam;
-			InitCollisionParams(Comp, CapsuleParams, ResponseParam);
-			const bool bEncroached = GetWorld()->OverlapBlockingTestByChannel(GetUpdatedComponentLocation(Ctx) - FVector(0.f,0.f,ScaledHalfHeightAdjust), FQuat::Identity,
-				Comp->UpdatedComponent->GetCollisionObjectType(), Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_None), CapsuleParams, ResponseParam);
-
-			// If encroached, cancel
-			if( bEncroached )
-			{
-				Comp->CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(OldUnscaledRadius, OldUnscaledHalfHeight);
-				return;
-			}
-		}
-
-		if (Comp->bCrouchMaintainsBaseLocation)
-		{
-			// Intentionally not using MoveUpdatedComponent, where a horizontal plane constraint would prevent the base of the capsule from staying at the same spot.
-			Comp->UpdatedComponent->MoveComponent(FVector(0.f, 0.f, -ScaledHalfHeightAdjust), Comp->UpdatedComponent->GetComponentQuat(), true, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
-		}
-
-		Comp->CharacterOwner->bIsCrouched = true;
-	}
-
-	Comp->bForceNextFloorCheck = true;
-
-	// OnStartCrouch takes the change from the Default size, not the current one (though they are usually the same).
-	const float MeshAdjust = ScaledHalfHeightAdjust;
-	// TODO ISPC: Cache this.
-	ACharacter* DefaultCharacter = Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>();
-	HalfHeightAdjust = (DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() - ClampedCrouchedHalfHeight);
-	ScaledHalfHeightAdjust = HalfHeightAdjust * ComponentScale;
-
-#if 0	// TODO ISPC
-	AdjustProxyCapsuleSize(Comp);
-#endif
-	// TODO ISPC: foreach_active
-	Comp->CharacterOwner->OnStartCrouch( HalfHeightAdjust, ScaledHalfHeightAdjust );
-
-	// Don't smooth this change in mesh position
-	if (bClientSimulation && Comp->CharacterOwner->Role == ROLE_SimulatedProxy)
-	{
-#if 1	// TODO ISPC
-		unimplemented();
-#else
-		FNetworkPredictionData_Client_Character* ClientData = GetPredictionData_Client_Character();
-		if (ClientData && ClientData->MeshTranslationOffset.Z != 0.f)
-		{
-			ClientData->MeshTranslationOffset -= FVector(0.f, 0.f, MeshAdjust);
-			ClientData->OriginalMeshTranslationOffset = ClientData->MeshTranslationOffset;
-		}
-#endif
-	}
-}
-
-
-void UnCrouch(FISPCMovementContext Ctx, bool bClientSimulation)
-{
-	if (!HasValidData(Comp))
-	{
-		return;
-	}
-
-	// TODO ISPC: Cache this.
-	ACharacter* DefaultCharacter = Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>();
-
-	// See if collision is already at desired size.
-	if( Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() == DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() )
-	{
-		if (!bClientSimulation)
-		{
-			Comp->CharacterOwner->bIsCrouched = false;
-		}
-		Comp->CharacterOwner->OnEndCrouch( 0.f, 0.f );
-		return;
-	}
-
-	const float CurrentCrouchedHalfHeight = Comp->CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-
-	const float ComponentScale = Comp->CharacterOwner->GetCapsuleComponent()->GetShapeScale();
-	const float OldUnscaledHalfHeight = Comp->CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
-	const float HalfHeightAdjust = DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() - OldUnscaledHalfHeight;
-	const float ScaledHalfHeightAdjust = HalfHeightAdjust * ComponentScale;
-	const FVector PawnLocation = GetUpdatedComponentLocation(Ctx);
-
-	// Grow to uncrouched size.
-	check(Comp->CharacterOwner->GetCapsuleComponent());
-
-	if( !bClientSimulation )
-	{
-		// Try to stay in place and see if the larger capsule fits. We use a slightly taller capsule to avoid penetration.
-		const float SweepInflation = KINDA_SMALL_NUMBER * 10.f;
-		FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(CrouchTrace), false, Comp->CharacterOwner);
-		FCollisionResponseParams ResponseParam;
-		InitCollisionParams(Comp, CapsuleParams, ResponseParam);
-
-		// Compensate for the difference between current capsule size and standing size
-		const FCollisionShape StandingCapsuleShape = Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_HeightCustom, -SweepInflation - ScaledHalfHeightAdjust); // Shrink by negative amount, so actually grow it.
-		const ECollisionChannel CollisionChannel = Comp->UpdatedComponent->GetCollisionObjectType();
-		bool bEncroached = true;
-
-		if (!Comp->bCrouchMaintainsBaseLocation)
-		{
-			// Expand in place
-			bEncroached = GetWorld()->OverlapBlockingTestByChannel(PawnLocation, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
-		
-			if (bEncroached)
-			{
-				// Try adjusting capsule position to see if we can avoid encroachment.
-				if (ScaledHalfHeightAdjust > 0.f)
-				{
-					// Shrink to a short capsule, sweep down to base to find where that would hit something, and then try to stand up from there.
-					float PawnRadius, PawnHalfHeight;
-					Comp->CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleSize(PawnRadius, PawnHalfHeight);
-					const float ShrinkHalfHeight = PawnHalfHeight - PawnRadius;
-					const float TraceDist = PawnHalfHeight - ShrinkHalfHeight;
-					const FVector Down = FVector(0.f, 0.f, -TraceDist);
-
-					FHitResult Hit(1.f);
-					const FCollisionShape ShortCapsuleShape = Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_HeightCustom, ShrinkHalfHeight);
-					const bool bBlockingHit = GetWorld()->SweepSingleByChannel(Hit, PawnLocation, PawnLocation + Down, FQuat::Identity, CollisionChannel, ShortCapsuleShape, CapsuleParams);
-					if (Hit.bStartPenetrating)
-					{
-						bEncroached = true;
-					}
-					else
-					{
-						// Compute where the base of the sweep ended up, and see if we can stand there
-						const float DistanceToBase = (Hit.Time * TraceDist) + ShortCapsuleShape.Capsule.HalfHeight;
-						const FVector NewLoc = FVector(PawnLocation.X, PawnLocation.Y, PawnLocation.Z - DistanceToBase + PawnHalfHeight + SweepInflation + UCharacterMovementComponent::MIN_FLOOR_DIST / 2.f);
-						bEncroached = GetWorld()->OverlapBlockingTestByChannel(NewLoc, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
-						if (!bEncroached)
-						{
-							// Intentionally not using MoveUpdatedComponent, where a horizontal plane constraint would prevent the base of the capsule from staying at the same spot.
-							Comp->UpdatedComponent->MoveComponent(NewLoc - PawnLocation, Comp->UpdatedComponent->GetComponentQuat(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
-						}
-					}
-				}
-			}
-		}
-		else
-		{
-			// Expand while keeping base location the same.
-			FVector StandingLocation = PawnLocation + FVector(0.f, 0.f, StandingCapsuleShape.GetCapsuleHalfHeight() - CurrentCrouchedHalfHeight);
-			bEncroached = GetWorld()->OverlapBlockingTestByChannel(StandingLocation, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
-
-			if (bEncroached)
-			{
-				if (IsMovingOnGround(Comp))
-				{
-					// Something might be just barely overhead, try moving down closer to the floor to avoid it.
-					const float MinFloorDist = KINDA_SMALL_NUMBER * 10.f;
-					if (Comp->CurrentFloor.bBlockingHit && Comp->CurrentFloor.FloorDist > MinFloorDist)
-					{
-						StandingLocation.Z -= Comp->CurrentFloor.FloorDist - MinFloorDist;
-						bEncroached = GetWorld()->OverlapBlockingTestByChannel(StandingLocation, FQuat::Identity, CollisionChannel, StandingCapsuleShape, CapsuleParams, ResponseParam);
-					}
-				}				
-			}
-
-			if (!bEncroached)
-			{
-				// Commit the change in location.
-				Comp->UpdatedComponent->MoveComponent(StandingLocation - PawnLocation, Comp->UpdatedComponent->GetComponentQuat(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
-				Comp->bForceNextFloorCheck = true;
-			}
-		}
-
-		// If still encroached then abort.
-		if (bEncroached)
-		{
-			return;
-		}
-
-		Comp->CharacterOwner->bIsCrouched = false;
-	}	
-	else
-	{
-		Comp->bShrinkProxyCapsule = true;
-	}
-
-	// Now call SetCapsuleSize() to cause touch/untouch events and actually grow the capsule
-	Comp->CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius(), DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight(), true);
-
-	const float MeshAdjust = ScaledHalfHeightAdjust;
-#if 0	// TODO ISPC
-	AdjustProxyCapsuleSize(Comp);
-#endif
-	Comp->CharacterOwner->OnEndCrouch( HalfHeightAdjust, ScaledHalfHeightAdjust );
-
-	// Don't smooth this change in mesh position
-	if (bClientSimulation && Comp->CharacterOwner->Role == ROLE_SimulatedProxy)
-	{
-#if 1	// TODO ISPC
-		unimplemented();
-#else
-		FNetworkPredictionData_Client_Character* ClientData = GetPredictionData_Client_Character();
-		if (ClientData && ClientData->MeshTranslationOffset.Z != 0.f)
-		{
-			ClientData->MeshTranslationOffset += FVector(0.f, 0.f, MeshAdjust);
-			ClientData->OriginalMeshTranslationOffset = ClientData->MeshTranslationOffset;
-		}
-#endif
 	}
 }
 

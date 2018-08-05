@@ -81,8 +81,22 @@ enum EComponentMobility
 	EComponentMobility_Movable
 };
 
+enum ENetRole
+{
+	/** No role at all. */
+	ROLE_None,
+	/** Locally simulated proxy of this actor. */
+	ROLE_SimulatedProxy,
+	/** Locally autonomous proxy of this actor. */
+	ROLE_AutonomousProxy,
+	/** Authoritative control over the actor. */
+	ROLE_Authority,
+	ROLE_MAX,
+};
+
 typedef int<3> FName;
 
+typedef float<2> FVector2D;
 typedef float<3> FVector;
 
 #define FORCEINLINE	inline
@@ -95,40 +109,50 @@ typedef float<3> FVector;
 struct FISPCMovementArrays
 {
 	// The Unreal components. Intentionally opaque, only used for calls back into C++.
-	UShooterUnrolledCppMovement** Comp;
+	const UShooterUnrolledCppMovement* const* Comp;
 
-	USceneComponent** UpdatedComponent;
-	ACharacter** CharacterOwner;
+	const USceneComponent* const* UpdatedComponent;
+	const ACharacter* const* CharacterOwner;
 	EMovementMode* MovementMode;
+	const
 #ifdef ISPC
-	EComponentMobility
+		EComponentMobility
 #else
-	EComponentMobility::Type
+		EComponentMobility::Type
 #endif
-		* UpdatedComponent_Mobility;
-	bool* UpdatedComponent_IsSimulatingPhysics;
-	bool* CharacterOwner_bClientUpdating;
-	bool* CharacterOwner_IsPlayingRootMotion;
-	bool* CharacterOwner_bServerMoveIgnoreRootMotion;
-	bool* CharacterOwner_IsMatineeControlled;
-	bool* CharacterOwner_HasAuthority;
-	USkeletalMeshComponent** CharacterOwner_GetMesh;
+		* const UpdatedComponent_Mobility;
+	const ENetRole* const CharacterOwner_Role;
+	const bool* const UpdatedComponent_IsSimulatingPhysics;
+	const bool* const CharacterOwner_bClientUpdating;
+	const bool* const CharacterOwner_IsPlayingRootMotion;
+	const bool* const CharacterOwner_bServerMoveIgnoreRootMotion;
+	const bool* const CharacterOwner_IsMatineeControlled;
+	const bool* const CharacterOwner_HasAuthority;
+	bool* CharacterOwner_bIsCrouched;
+	const bool* const NavAgentProps_bCanCrouch;
+	const USkeletalMeshComponent* const* CharacterOwner_GetMesh;
+	FVector* const CharacterOwner_CapsuleComponent_Size;	// x = Radius, y = HalfHeight, z = ShapeScale
+	// Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>()->GetUnscaledCapsuleRadius/GetUnscaledCapsuleHalfHeight()
+	const FVector2D* const DefaultCharacter_CapsuleComponent_UnscaledSize;
+
+	const float* const CrouchedHalfHeight;
 
 	FVector* PendingImpulseToApply;
 	FVector* PendingForceToApply;
 	FVector* PendingLaunchVelocity;
 
 	bool* bForceNextFloorCheck;
+	bool* bShrinkProxyCapsule;
 
 	FVector* LastUpdateLocation;
 
-	bool* CurrentRootMotion_HasActiveRootMotionSources;
+	const bool* const CurrentRootMotion_HasActiveRootMotionSources;
 
 	bool* bDeferUpdateBasedMovement;
 
-	UPrimitiveComponent** CharacterOwner_MovementBase;
+	const UPrimitiveComponent* const* CharacterOwner_MovementBase;
 
-	bool* RootMotionParams_bHasRootMotion;
+	const bool* const RootMotionParams_bHasRootMotion;
 
 	FVector* Velocity;
 };
