@@ -7,7 +7,7 @@
 	#define _CppCallbackTemplate(FuncName, ArgDeclVarying, ArgDeclUniform, ArgFwd)	\
 		inline void FuncName ArgDeclVarying	\
 		{	\
-			extern "C" void uniform FuncName ## _CppCallback ArgDeclUniform;	\
+			extern "C" void FuncName ## _CppCallback ArgDeclUniform;	\
 			foreach_active (Index)	\
 			{	\
 				FuncName ## _CppCallback ArgFwd;	\
