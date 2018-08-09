@@ -32,6 +32,15 @@ inline uniform int<3> extract(varying int<3> v, uniform int i)
 	u.z = extract(v.z, i);
 	return v;
 }
+inline uniform float<4> extract(varying float<4> v, uniform int i)
+{
+	uniform float<4> u;
+	u.x = extract(v.x, i);
+	u.y = extract(v.y, i);
+	u.z = extract(v.z, i);
+	u.w = extract(v.w, i);
+	return v;
+}
 
 inline varying bool insert(varying bool v, uniform int32 index, uniform bool u)
 {
@@ -78,7 +87,12 @@ struct FISPCMovementArrays
 	FVector* const CharacterOwner_CapsuleComponent_Size;	// x = Radius, y = HalfHeight, z = ShapeScale
 	// Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>()->GetUnscaledCapsuleRadius/GetUnscaledCapsuleHalfHeight()
 	const FVector2D* const DefaultCharacter_CapsuleComponent_UnscaledSize;
+	
+	const ECollisionChannel* const UpdatedComponent_CollisionObjectType;
+	const FCollisionShape* const PawnCapsuleCollisionShape_ShrinkCapsuleExtent_None;
+	const FCollisionShape* const PawnCapsuleCollisionShape_ShrinkCapsuleExtent_HeightCustom;
 
+	const bool* const bCrouchMaintainsBaseLocation;
 	const float* const CrouchedHalfHeight;
 
 	FVector* PendingImpulseToApply;

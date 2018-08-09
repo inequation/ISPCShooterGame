@@ -10,6 +10,15 @@ class UPrimitiveComponent;
 
 // Define a bunch of types for ISPC.
 #ifdef ISPC
+
+typedef int<3> FName;
+
+typedef float<2> FVector2D;
+typedef float<3> FVector;
+typedef float<4> FQuat;
+
+typedef unsigned int8 uint8;
+
 // NOTE: Must be identical to the definition in EngineTypes.h!
 enum EMovementMode
 {
@@ -81,6 +90,94 @@ enum ENetRole
 	ROLE_MAX,
 };
 
+enum ECollisionChannel
+{
+
+	ECC_WorldStatic,
+	ECC_WorldDynamic,
+	ECC_Pawn,
+	ECC_Visibility,
+	ECC_Camera,
+	ECC_PhysicsBody,
+	ECC_Vehicle,
+	ECC_Destructible,
+
+	/** Reserved for gizmo collision */
+	ECC_EngineTraceChannel1,
+
+	ECC_EngineTraceChannel2,
+	ECC_EngineTraceChannel3,
+	ECC_EngineTraceChannel4,
+	ECC_EngineTraceChannel5,
+	ECC_EngineTraceChannel6,
+
+	ECC_GameTraceChannel1,
+	ECC_GameTraceChannel2,
+	ECC_GameTraceChannel3,
+	ECC_GameTraceChannel4,
+	ECC_GameTraceChannel5,
+	ECC_GameTraceChannel6,
+	ECC_GameTraceChannel7,
+	ECC_GameTraceChannel8,
+	ECC_GameTraceChannel9,
+	ECC_GameTraceChannel10,
+	ECC_GameTraceChannel11,
+	ECC_GameTraceChannel12,
+	ECC_GameTraceChannel13,
+	ECC_GameTraceChannel14,
+	ECC_GameTraceChannel15,
+	ECC_GameTraceChannel16,
+	ECC_GameTraceChannel17,
+	ECC_GameTraceChannel18,
+
+	/** Add new serializeable channels above here (i.e. entries that exist in FCollisionResponseContainer) */
+	/** Add only nonserialized/transient flags below */
+
+	// NOTE!!!! THESE ARE BEING DEPRECATED BUT STILL THERE FOR BLUEPRINT. PLEASE DO NOT USE THEM IN CODE
+
+	ECC_OverlapAll_Deprecated,
+	ECC_MAX,
+};
+
+enum ECollisionShape
+{
+	Line,
+	Box,
+	Sphere,
+	Capsule
+};
+
+//
+// MoveComponent options.
+//
+enum EMoveComponentFlags
+{
+	// Bitflags.
+	MOVECOMP_NoFlags						= 0x0000,	// no flags
+	MOVECOMP_IgnoreBases					= 0x0001,	// ignore collisions with things the Actor is based on
+	MOVECOMP_SkipPhysicsMove				= 0x0002,	// when moving this component, do not move the physics representation. Used internally to avoid looping updates when syncing with physics.
+	MOVECOMP_NeverIgnoreBlockingOverlaps	= 0x0004,	// never ignore initial blocking overlaps during movement, which are usually ignored when moving out of an object. MOVECOMP_IgnoreBases is still respected.
+	MOVECOMP_DisableBlockingOverlapDispatch	= 0x0008,	// avoid dispatching blocking hit events when the hit started in penetration (and is not ignored, see MOVECOMP_NeverIgnoreBlockingOverlaps).
+};
+
+/** Whether to teleport physics body or not */
+enum ETeleportType
+{
+	/** Do not teleport physics body. This means velocity will reflect the movement between initial and final position, and collisions along the way will occur */
+	None,
+	/** Teleport physics body so that velocity remains the same and no collision occurs */
+	TeleportPhysics
+};
+
+struct FCollisionShape
+{
+	ECollisionShape ShapeType;
+
+	float HalfExtentX;
+	float HalfExtentY;
+	float HalfExtentZ;
+};
+
 // Replicating this on the ISPC side is not practical.
 struct FCollisionQueryParams
 {
@@ -93,11 +190,91 @@ struct FCollisionResponseParams
 	int8 _Dummy[128];
 };
 
-typedef int<3> FName;
+struct FHitResult
+{
+	// FIXME ISPC: This is a bitfield on the C++ side!
+	uint8 bBlockingHit_bStartPenetrating;
 
-typedef float<2> FVector2D;
-typedef float<3> FVector;
-typedef float<4> FQuat;
+	/** Face index we hit (for complex hits with triangle meshes). */
+	int32 FaceIndex;
+
+	/**
+	 * 'Time' of impact along trace direction (ranging from 0.0 to 1.0) if there is a hit, indicating time between TraceStart and TraceEnd.
+	 * For swept movement (but not queries) this may be pulled back slightly from the actual time of impact, to prevent precision problems with adjacent geometry.
+	 */
+	float Time;
+	 
+	/** The distance from the TraceStart to the Location in world space. This value is 0 if there was an initial overlap (trace started inside another colliding object). */
+	float Distance; 
+	
+	/**
+	 * The location in world space where the moving shape would end up against the impacted object, if there is a hit. Equal to the point of impact for line tests.
+	 * Example: for a sphere trace test, this is the point where the center of the sphere would be located when it touched the other object.
+	 * For swept movement (but not queries) this may not equal the final location of the shape since hits are pulled back slightly to prevent precision issues from overlapping another surface.
+	 */
+	FVector Location;
+
+	/**
+	 * Location in world space of the actual contact of the trace shape (box, sphere, ray, etc) with the impacted object.
+	 * Example: for a sphere trace test, this is the point where the surface of the sphere touches the other object.
+	 * @note: In the case of initial overlap (bStartPenetrating=true), ImpactPoint will be the same as Location because there is no meaningful single impact point to report.
+	 */
+	FVector ImpactPoint;
+
+	/**
+	 * Normal of the hit in world space, for the object that was swept. Equal to ImpactNormal for line tests.
+	 * This is computed for capsules and spheres, otherwise it will be the same as ImpactNormal.
+	 * Example: for a sphere trace test, this is a normalized vector pointing in towards the center of the sphere at the point of impact.
+	 */
+	FVector Normal;
+
+	/**
+	 * Normal of the hit in world space, for the object that was hit by the sweep, if any.
+	 * For example if a box hits a flat plane, this is a normalized vector pointing out from the plane.
+	 * In the case of impact with a corner or edge of a surface, usually the "most opposing" normal (opposed to the query direction) is chosen.
+	 */
+	FVector ImpactNormal;
+
+	/**
+	 * Start location of the trace.
+	 * For example if a sphere is swept against the world, this is the starting location of the center of the sphere.
+	 */
+	FVector TraceStart;
+
+	/**
+	 * End location of the trace; this is NOT where the impact occurred (if any), but the furthest point in the attempted sweep.
+	 * For example if a sphere is swept against the world, this would be the center of the sphere if there was no blocking hit.
+	 */
+	FVector TraceEnd;
+
+	/**
+	  * If this test started in penetration (bStartPenetrating is true) and a depenetration vector can be computed,
+	  * this value is the distance along Normal that will result in moving out of penetration.
+	  * If the distance cannot be computed, this distance will be zero.
+	  */
+	float PenetrationDepth;
+
+	/** Extra data about item that was hit (hit primitive specific). */
+	int32 Item;
+
+	/**
+	 * Physical material that was hit.
+	 * @note Must set bReturnPhysicalMaterial on the swept PrimitiveComponent or in the query params for this to be returned.
+	 */
+	int<3>/*TWeakObjectPtr<class UPhysicalMaterial>*/ PhysMaterial;
+
+	/** Actor hit by the trace. */
+	int<3>/*TWeakObjectPtr<class AActor>*/ Actor;
+
+	/** PrimitiveComponent hit by the trace. */
+	int<3>/*TWeakObjectPtr<class UPrimitiveComponent>*/ Component;
+
+	/** Name of bone we hit (for skeletal meshes). */
+	FName BoneName;
+
+	/** Name of the _my_ bone which took part in hit event (in case of two skeletal meshes colliding). */
+	FName MyBoneName;
+};
 
 #define FORCEINLINE	inline
 #define INDEX_NONE -1

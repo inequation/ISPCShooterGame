@@ -1,121 +1,9 @@
 #pragma once
 
-#include "CppInterop.h"
+#include "CppCallbackMacros.h"
 
-#ifdef ISPC
-	inline void* uniform extract(void* varying x, uniform int i)
-	{
-		return (void* uniform)extract((unsigned int64)x, i);
-	}
-	inline const void* uniform extract(const void* varying x, uniform int i)
-	{
-		return (const void* uniform)extract((unsigned int64)x, i);
-	}
-	inline bool uniform extract(bool varying x, uniform int i)
-	{
-		return (uniform bool)extract((int8)x, i);
-	}
-
-	inline varying bool insert(varying bool v, uniform int32 index, uniform bool u)
-	{
-		return (varying bool)insert((varying int8)v, index, (uniform int8)u);
-	}
-	inline varying FVector insert(varying FVector v, uniform int32 index, uniform FVector u)
-	{
-		v.x = insert(v.x, index, u.x);
-		v.y = insert(v.y, index, u.y);
-		v.z = insert(v.z, index, u.z);
-		return v;
-	}
-
-	#define DefineCppCallback_1Arg(FuncName, Arg1Type, Arg1, CppCode)	\
-		void FuncName(Arg1Type uniform Arg1)	\
-		{	\
-			extern "C" void FuncName ## _CppCallback(Arg1Type uniform Arg1);\
-			FuncName ## _CppCallback(Arg1);	\
-		}	\
-		inline void FuncName(Arg1Type varying Arg1)	\
-		{	\
-			foreach_active (Index)	\
-			{	\
-				FuncName(extract(Arg1, Index));\
-			}	\
-		}
-
-	#define DefineCppCallback_2Arg(FuncName, Arg1Type, Arg1, Arg2Type, Arg2, CppCode)	\
-		void FuncName(Arg1Type uniform Arg1, Arg2Type uniform Arg2)	\
-		{	\
-			extern "C" void FuncName ## _CppCallback(Arg1Type uniform Arg1, Arg2Type uniform Arg2);\
-			FuncName ## _CppCallback(Arg1, Arg2);	\
-		}	\
-		inline void FuncName(Arg1Type varying Arg1, Arg2Type varying Arg2)	\
-		{	\
-			foreach_active (Index)	\
-			{	\
-				FuncName(extract(Arg1, Index), extract(Arg2, Index));\
-			}	\
-		}
-
-	#define DefineCppCallback_3Arg(FuncName, Arg1Type, Arg1, Arg2Type, Arg2, Arg3Type, Arg3, CppCode)	\
-		void FuncName(Arg1Type uniform Arg1, Arg2Type uniform Arg2, Arg3Type uniform Arg3)	\
-		{	\
-			extern "C" void FuncName ## _CppCallback(Arg1Type uniform Arg1, Arg2Type uniform Arg2, Arg3Type uniform Arg3);\
-			FuncName ## _CppCallback(Arg1, Arg2, Arg3);	\
-		}	\
-		inline void FuncName(Arg1Type varying Arg1, Arg2Type varying Arg2, Arg3Type varying Arg3)	\
-		{	\
-			foreach_active (Index)	\
-			{	\
-				FuncName(extract(Arg1, Index), extract(Arg2, Index), extract(Arg3, Index));\
-			}	\
-		}
-
-	#define DefineCppCallback_1Arg_RetVal(ReturnType, FuncName, Arg1Type, Arg1, CppCode)	\
-		ReturnType uniform FuncName(Arg1Type uniform Arg1)	\
-		{	\
-			extern "C" ReturnType uniform FuncName ## _CppCallback(Arg1Type uniform Arg1);\
-			return FuncName ## _CppCallback(Arg1);	\
-		}	\
-		inline ReturnType varying FuncName(Arg1Type varying Arg1)	\
-		{	\
-			ReturnType varying ReturnValue;	\
-			foreach_active (Index)	\
-			{	\
-				ReturnValue = insert(ReturnValue, Index, FuncName(extract(Arg1, Index)));\
-			}	\
-		}
-
-	#define DefineCppCallback_2Arg_RetVal(ReturnType, FuncName, Arg1Type, Arg1, Arg2Type, Arg2, CppCode)	\
-		ReturnType uniform FuncName(Arg1Type uniform Arg1, Arg2Type uniform Arg2)	\
-		{	\
-			extern "C" ReturnType uniform FuncName ## _CppCallback(Arg1Type uniform Arg1, Arg2Type uniform Arg2);\
-			return FuncName ## _CppCallback(Arg1, Arg2);	\
-		}	\
-		inline varying ReturnType FuncName(Arg1Type varying Arg1, Arg2Type varying Arg2)	\
-		{	\
-			ReturnType varying ReturnValue;	\
-			foreach_active (Index)	\
-			{	\
-				ReturnValue = insert(ReturnValue, Index, FuncName(extract(Arg1, Index), extract(Arg2, Index)));\
-			}	\
-		}
-#else
+#ifndef ISPC
 	#define	AccessComp	((UShooterUnrolledCppMovement*)_Comp)
-
-	#define DefineCppCallback_1Arg(FuncName, Arg1Type, Arg1, CppCode)	\
-		extern "C" void FuncName ## _CppCallback(Arg1Type Arg1) { CppCode }
-	
-	#define DefineCppCallback_2Arg(FuncName, Arg1Type, Arg1, Arg2Type, Arg2, CppCode)	\
-		extern "C" void FuncName ## _CppCallback(Arg1Type Arg1, Arg2Type Arg2) { CppCode }
-
-	#define DefineCppCallback_3Arg(FuncName, Arg1Type, Arg1, Arg2Type, Arg2, Arg3Type, Arg3, CppCode)	\
-		extern "C" void FuncName ## _CppCallback(Arg1Type Arg1, Arg2Type Arg2, Arg3Type Arg3) { CppCode }
-
-	#define DefineCppCallback_1Arg_RetVal(ReturnType, FuncName, Arg1Type, Arg1, CppCode)	\
-		extern "C" ReturnType FuncName ## _CppCallback(Arg1Type Arg1) { CppCode }
-
-	#define DefineCppCallback_2Arg_RetVal(ReturnType, FuncName, Arg1Type, Arg1, Arg2Type, Arg2, CppCode)	\
-		extern "C" ReturnType FuncName ## _CppCallback(Arg1Type Arg1, Arg2Type Arg2) { CppCode }
 #endif
 
 DefineCppCallback_2Arg(ConsumeRootMotion,
@@ -157,7 +45,9 @@ DefineCppCallback_1Arg(RestoreDefaultCapsuleSize,
 	{
 		auto* CharacterOwner = (ACharacter*)_CharacterOwner;
 		ACharacter* DefaultCharacter = CharacterOwner->GetClass()->GetDefaultObject<ACharacter>();
-		CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius(), DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight());
+		CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(
+			DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleRadius(),
+			DefaultCharacter->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight());
 	})
 
 DefineCppCallback_3Arg(SetCapsuleSize,
@@ -165,4 +55,39 @@ DefineCppCallback_3Arg(SetCapsuleSize,
 	{
 		auto* CharacterOwner = (ACharacter*)_CharacterOwner;
 		CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(Radius, HalfHeight);
+	})
+
+DefineCppCallback_5Arg(UpdatedPrimitive_InitSweepCollisionParams,
+	const void*, _UpdatedPrimitive, FName, InTraceTag, const void*, _InIgnoreActor,
+	void*, _OutParams, void*, _OutResponseParam,
+	{
+		// FIXME: Trace tag?
+		FName TraceTag = NAME_None;
+		FCollisionQueryParams* Query = new (_OutParams) FCollisionQueryParams(TraceTag, false, static_cast<AActor*>(_InIgnoreActor));
+		FCollisionResponseParams Response = new (_OutResponseParam) FCollisionResponseParams();
+		static_cast<UPrimitiveComponent*>(_UpdatedPrimitive)->InitSweepCollisionParams(
+			*Query, *Response);
+	});
+
+DefineCppCallback_7Arg(OverlapBlockingTestByChannel,
+	const void*, _Comp, const FVector, Pos, const FQuat, Rot,
+	/*ECollisionChannel*/uint8, TraceChannel, const void*, _CollisionShape,
+	const /*FCollisionQueryParams**/void*, _Params, const /*FCollisionResponseParams**/void*, _ResponseParam,
+	{
+		AccessComp(GetWorld())->OverlapBlockingTestByChannel(
+			Pos, Rot, (ECollisionChannel)TraceChannel, _CollisionShape,
+			*static_cast<FCollisionQueryParams*>(_CapsuleParams),
+			*static_cast<FCollisionResponseParams*>(_ResponseParam));
+	})
+
+DefineCppCallback_7Arg(MoveComponent,
+	const void*, _Comp, const FVector, Delta, const FQuat, NewRotation, bool, bSweep, /*FHitResult**/void*, _Hit, /*EMoveComponentFlags*/uint8, MoveFlags, /*ETeleportType*/uint8, Teleport,
+	{
+		static_cast<USceneComponent*>(_Comp)->MoveComponent(
+			Delta,
+			NewRotation,
+			bSweep,
+			static_cast<FHitResult*>(_Hit),
+			(EMoveComponentFlags)MoveFlags,
+			(ETeleportType)Teleport);
 	})

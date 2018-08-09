@@ -30,6 +30,8 @@ const uniform float VERTICAL_SLOPE_NORMAL_Z = 0.001f; // Slope is vertical if Ab
 #define SMALL_NUMBER		(1.e-8f)
 
 const uniform FVector FVector_ZeroVector = { 0, 0, 0 };
+const uniform FQuat FQuat_Identity = { 0, 0, 0, 1 };
+inline FVector MakeFVector(float X, float Y, float Z) { FVector V = { X, Y, Z }; return V; }
 
 #define UNIMPLEMENTED_CODE	0
 
@@ -214,18 +216,7 @@ static bool IsWithinEdgeTolerance(const FVector& CapsuleLocation, const FVector&
 	const float ReducedRadiusSq = FMath::Square(FMath::Max(UCharacterMovementComponent::SWEEP_EDGE_REJECT_DISTANCE + KINDA_SMALL_NUMBER, CapsuleRadius - UCharacterMovementComponent::SWEEP_EDGE_REJECT_DISTANCE));
 	return DistFromCenterSq < ReducedRadiusSq;
 }
-#endif
 
-static void InitCollisionParams(FISPCMovementContext Ctx, FCollisionQueryParams &OutParams, FCollisionResponseParams& OutResponseParam)
-{
-	if (CtxAccess(UpdatedPrimitive))
-	{
-		// TODO ISPC: foreach_active
-		Comp->UpdatedPrimitive->InitSweepCollisionParams(OutParams, OutResponseParam);
-	}
-}
-
-#if UNIMPLEMENTED_CODE
 void FSystemTickFunction::ExecuteTick(float DeltaTime, ELevelTick TickType, ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent)
 {
 	check(IsValid(System));	// Apparently, we can get here from a spurious tick?
@@ -490,7 +481,7 @@ void Crouch(FISPCMovementContext Ctx, bool bClientSimulation)
 	if (bClientSimulation && CtxAccess(CharacterOwner_Role) == ROLE_SimulatedProxy)
 	{
 		// restore collision size before crouching
-		RestoreDefaultCapsuleSize(Comp->CharacterOwner);
+		RestoreDefaultCapsuleSize(CtxAccess(CharacterOwner));
 		// ISPC: Mirror to local data.
 		CtxAccess(CharacterOwner_CapsuleComponent_Size).x = CtxAccess(DefaultCharacter_CapsuleComponent_UnscaledSize).x;
 		CtxAccess(CharacterOwner_CapsuleComponent_Size).y = CtxAccess(DefaultCharacter_CapsuleComponent_UnscaledSize).y;
@@ -513,30 +504,33 @@ void Crouch(FISPCMovementContext Ctx, bool bClientSimulation)
 		// Crouching to a larger height? (this is rare)
 		if (ClampedCrouchedHalfHeight > OldSize.y)
 		{
-			FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(CrouchTrace), false, Comp->CharacterOwner);
+			FCollisionQueryParams CapsuleParams;
 			FCollisionResponseParams ResponseParam;
-			InitCollisionParams(Comp, CapsuleParams, ResponseParam);
-			const bool bEncroached = GetWorld()->OverlapBlockingTestByChannel(GetUpdatedComponentLocation(Ctx) - FVector(0.f,0.f,ScaledHalfHeightAdjust), FQuat::Identity,
-				Comp->UpdatedComponent->GetCollisionObjectType(), Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_None), CapsuleParams, ResponseParam);
+			FName CrouchTrace;	// FIXME ISPC
+			UpdatedPrimitive_InitSweepCollisionParams(CtxAccess(UpdatedPrimitive), CrouchTrace, CtxAccess(CharacterOwner), &CapsuleParams, &ResponseParam);
+			const bool bEncroached = OverlapBlockingTestByChannel(CtxAccess(Comp), GetUpdatedComponentLocation(Ctx) - MakeFVector(0.f,0.f,ScaledHalfHeightAdjust), FQuat_Identity,
+				CtxAccess(UpdatedComponent_CollisionObjectType), CtxAccess(PawnCapsuleCollisionShape_ShrinkCapsuleExtent_None), CapsuleParams, ResponseParam);
 
 			// If encroached, cancel
 			if( bEncroached )
 			{
-				Comp->CharacterOwner->GetCapsuleComponent()->SetCapsuleSize(OldUnscaledRadius, OldUnscaledHalfHeight);
+				SetCapsuleSize(CtxAccess(CharacterOwner), OldSize.x, OldSize.y);
+				// ISPC: Mirror to local data.
+				CtxAccess(CharacterOwner_CapsuleComponent_Size).y = OldSize.y;
 				return;
 			}
 		}
 
-		if (Comp->bCrouchMaintainsBaseLocation)
+		if (CtxAccess(bCrouchMaintainsBaseLocation))
 		{
 			// Intentionally not using MoveUpdatedComponent, where a horizontal plane constraint would prevent the base of the capsule from staying at the same spot.
-			Comp->UpdatedComponent->MoveComponent(FVector(0.f, 0.f, -ScaledHalfHeightAdjust), Comp->UpdatedComponent->GetComponentQuat(), true, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+			MoveComponent(CtxAccess(UpdatedComponent), MakeFVector(0.f, 0.f, -ScaledHalfHeightAdjust), CtxAccess(UpdatedComponent_ComponentQuat), true, NULL, MOVECOMP_NoFlags, TeleportPhysics);
 		}
 
-		Comp->CharacterOwner->bIsCrouched = true;
+		CtxAccess(CharacterOwner_bIsCrouched) = true;
 	}
 
-	Comp->bForceNextFloorCheck = true;
+	CtxAccess(bForceNextFloorCheck) = true;
 
 	// OnStartCrouch takes the change from the Default size, not the current one (though they are usually the same).
 	const float MeshAdjust = ScaledHalfHeightAdjust;
@@ -603,13 +597,13 @@ void UnCrouch(FISPCMovementContext Ctx, bool bClientSimulation)
 	{
 		// Try to stay in place and see if the larger capsule fits. We use a slightly taller capsule to avoid penetration.
 		const float SweepInflation = KINDA_SMALL_NUMBER * 10.f;
-		FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(CrouchTrace), false, Comp->CharacterOwner);
+		FCollisionQueryParams CapsuleParams;// (SCENE_QUERY_STAT(CrouchTrace), false, Comp->CharacterOwner);
 		FCollisionResponseParams ResponseParam;
-		InitCollisionParams(Comp, CapsuleParams, ResponseParam);
+		UpdatedPrimitive_InitSweepCollisionParams(CtxAccess(UpdatedPrimitive), &CapsuleParams, &ResponseParam);
 
 		// Compensate for the difference between current capsule size and standing size
 		const FCollisionShape StandingCapsuleShape = Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_HeightCustom, -SweepInflation - ScaledHalfHeightAdjust); // Shrink by negative amount, so actually grow it.
-		const ECollisionChannel CollisionChannel = Comp->UpdatedComponent->GetCollisionObjectType();
+		const ECollisionChannel CollisionChannel = CtxAccess(UpdatedComponent_CollisionObjectType);
 		bool bEncroached = true;
 
 		if (!Comp->bCrouchMaintainsBaseLocation)
@@ -2296,8 +2290,8 @@ bool CheckLedgeDirection(FISPCMovementContext Ctx, const FVector& OldLocation, c
 	FCollisionResponseParams ResponseParam;
 	InitCollisionParams(Comp, CapsuleParams, ResponseParam);
 	// ISPC: This can be cached, no point in unrolling.
-	const FCollisionShape CapsuleShape = Comp->GetPawnCapsuleCollisionShape(UCharacterMovementComponent::EShrinkCapsuleExtent::SHRINK_None);
-	const ECollisionChannel CollisionChannel = Comp->UpdatedComponent->GetCollisionObjectType();
+	const FCollisionShape CapsuleShape = CtxAccess(PawnCapsuleCollisionShape_ShrinkCapsuleExtent_None);
+	const ECollisionChannel CollisionChannel = CtxAccess(UpdatedComponent_CollisionObjectType);
 	FHitResult Result(1.f);
 	GetWorld()->SweepSingleByChannel(Result, OldLocation, SideDest, FQuat::Identity, CollisionChannel, CapsuleShape, CapsuleParams, ResponseParam);
 
@@ -2436,7 +2430,7 @@ void FindFloor(FISPCMovementContext Ctx, const FVector& CapsuleLocation, FFindFl
 			// Force floor check if base has collision disabled or if it does not block us.
 			UPrimitiveComponent* MovementBase = Comp->CharacterOwner->GetMovementBase();
 			const AActor* BaseActor = MovementBase ? MovementBase->GetOwner() : NULL;
-			const ECollisionChannel CollisionChannel = Comp->UpdatedComponent->GetCollisionObjectType();
+			const ECollisionChannel CollisionChannel = CtxAccess(UpdatedComponent_CollisionObjectType);
 
 			if (MovementBase != NULL)
 			{
@@ -2547,7 +2541,7 @@ void ComputeFloorDist(FISPCMovementContext Ctx, const FVector& CapsuleLocation, 
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ComputeFloorDist), false, Comp->CharacterOwner);
 	FCollisionResponseParams ResponseParam;
 	InitCollisionParams(Comp, QueryParams, ResponseParam);
-	const ECollisionChannel CollisionChannel = Comp->UpdatedComponent->GetCollisionObjectType();
+	const ECollisionChannel CollisionChannel = CtxAccess(UpdatedComponent_CollisionObjectType);
 
 	// Sweep test
 	if (!bSkipSweep && SweepDistance > 0.f && SweepRadius > 0.f)
