@@ -41,6 +41,10 @@
 		_CppCallbackTemplate(FuncName, (ArgType0 varying Arg0, ArgType1 varying Arg1, ArgType2 varying Arg2, ArgType3 varying Arg3, ArgType4 varying Arg4, ArgType5 varying Arg5), (ArgType0 uniform Arg0, ArgType1 uniform Arg1, ArgType2 uniform Arg2, ArgType3 uniform Arg3, ArgType4 uniform Arg4, ArgType5 uniform Arg5), (extract(Arg0, Index), extract(Arg1, Index), extract(Arg2, Index), extract(Arg3, Index), extract(Arg4, Index), extract(Arg5, Index)))
 	#define DefineCppCallback_7Arg(FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, CppCode)	\
 		_CppCallbackTemplate(FuncName, (ArgType0 varying Arg0, ArgType1 varying Arg1, ArgType2 varying Arg2, ArgType3 varying Arg3, ArgType4 varying Arg4, ArgType5 varying Arg5, ArgType6 varying Arg6), (ArgType0 uniform Arg0, ArgType1 uniform Arg1, ArgType2 uniform Arg2, ArgType3 uniform Arg3, ArgType4 uniform Arg4, ArgType5 uniform Arg5, ArgType6 uniform Arg6), (extract(Arg0, Index), extract(Arg1, Index), extract(Arg2, Index), extract(Arg3, Index), extract(Arg4, Index), extract(Arg5, Index), extract(Arg6, Index)))
+	#define DefineCppCallback_8Arg(FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, CppCode)	\
+		_CppCallbackTemplate(FuncName, (ArgType0 varying Arg0, ArgType1 varying Arg1, ArgType2 varying Arg2, ArgType3 varying Arg3, ArgType4 varying Arg4, ArgType5 varying Arg5, ArgType6 varying Arg6, ArgType7 varying Arg7), (ArgType0 uniform Arg0, ArgType1 uniform Arg1, ArgType2 uniform Arg2, ArgType3 uniform Arg3, ArgType4 uniform Arg4, ArgType5 uniform Arg5, ArgType6 uniform Arg6, ArgType7 uniform Arg7), (extract(Arg0, Index), extract(Arg1, Index), extract(Arg2, Index), extract(Arg3, Index), extract(Arg4, Index), extract(Arg5, Index), extract(Arg6, Index), extract(Arg7, Index)))
+	#define DefineCppCallback_9Arg(FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, ArgType8, Arg8, CppCode)	\
+		_CppCallbackTemplate(FuncName, (ArgType0 varying Arg0, ArgType1 varying Arg1, ArgType2 varying Arg2, ArgType3 varying Arg3, ArgType4 varying Arg4, ArgType5 varying Arg5, ArgType6 varying Arg6, ArgType7 varying Arg7, ArgType8 varying Arg8), (ArgType0 uniform Arg0, ArgType1 uniform Arg1, ArgType2 uniform Arg2, ArgType3 uniform Arg3, ArgType4 uniform Arg4, ArgType5 uniform Arg5, ArgType6 uniform Arg6, ArgType7 uniform Arg7, ArgType8 uniform Arg8), (extract(Arg0, Index), extract(Arg1, Index), extract(Arg2, Index), extract(Arg3, Index), extract(Arg4, Index), extract(Arg5, Index), extract(Arg6, Index), extract(Arg7, Index), extract(Arg8, Index)))
 	#define DefineCppCallback_0Arg_RetVal(ReturnType, FuncName, CppCode)	\
 		_CppCallbackTemplate_RetVal(ReturnType, FuncName, (), (), ())
 	#define DefineCppCallback_1Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, CppCode)	\
@@ -57,6 +61,10 @@
 		_CppCallbackTemplate_RetVal(ReturnType, FuncName, (ArgType0 varying Arg0, ArgType1 varying Arg1, ArgType2 varying Arg2, ArgType3 varying Arg3, ArgType4 varying Arg4, ArgType5 varying Arg5), (ArgType0 uniform Arg0, ArgType1 uniform Arg1, ArgType2 uniform Arg2, ArgType3 uniform Arg3, ArgType4 uniform Arg4, ArgType5 uniform Arg5), (extract(Arg0, Index), extract(Arg1, Index), extract(Arg2, Index), extract(Arg3, Index), extract(Arg4, Index), extract(Arg5, Index)))
 	#define DefineCppCallback_7Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, CppCode)	\
 		_CppCallbackTemplate_RetVal(ReturnType, FuncName, (ArgType0 varying Arg0, ArgType1 varying Arg1, ArgType2 varying Arg2, ArgType3 varying Arg3, ArgType4 varying Arg4, ArgType5 varying Arg5, ArgType6 varying Arg6), (ArgType0 uniform Arg0, ArgType1 uniform Arg1, ArgType2 uniform Arg2, ArgType3 uniform Arg3, ArgType4 uniform Arg4, ArgType5 uniform Arg5, ArgType6 uniform Arg6), (extract(Arg0, Index), extract(Arg1, Index), extract(Arg2, Index), extract(Arg3, Index), extract(Arg4, Index), extract(Arg5, Index), extract(Arg6, Index)))
+	#define DefineCppCallback_8Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, CppCode)	\
+		_CppCallbackTemplate_RetVal(ReturnType, FuncName, (ArgType0 varying Arg0, ArgType1 varying Arg1, ArgType2 varying Arg2, ArgType3 varying Arg3, ArgType4 varying Arg4, ArgType5 varying Arg5, ArgType6 varying Arg6, ArgType7 varying Arg7), (ArgType0 uniform Arg0, ArgType1 uniform Arg1, ArgType2 uniform Arg2, ArgType3 uniform Arg3, ArgType4 uniform Arg4, ArgType5 uniform Arg5, ArgType6 uniform Arg6, ArgType7 uniform Arg7), (extract(Arg0, Index), extract(Arg1, Index), extract(Arg2, Index), extract(Arg3, Index), extract(Arg4, Index), extract(Arg5, Index), extract(Arg6, Index), extract(Arg7, Index)))
+	#define DefineCppCallback_9Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, ArgType8, Arg8, CppCode)	\
+		_CppCallbackTemplate_RetVal(ReturnType, FuncName, (ArgType0 varying Arg0, ArgType1 varying Arg1, ArgType2 varying Arg2, ArgType3 varying Arg3, ArgType4 varying Arg4, ArgType5 varying Arg5, ArgType6 varying Arg6, ArgType7 varying Arg7, ArgType8 varying Arg8), (ArgType0 uniform Arg0, ArgType1 uniform Arg1, ArgType2 uniform Arg2, ArgType3 uniform Arg3, ArgType4 uniform Arg4, ArgType5 uniform Arg5, ArgType6 uniform Arg6, ArgType7 uniform Arg7, ArgType8 uniform Arg8), (extract(Arg0, Index), extract(Arg1, Index), extract(Arg2, Index), extract(Arg3, Index), extract(Arg4, Index), extract(Arg5, Index), extract(Arg6, Index), extract(Arg7, Index), extract(Arg8, Index)))
 #elif EMIT_FRIEND_DECLARATIONS
 	#define DefineCppCallback_0Arg(FuncName, CppCode)	\
 		friend extern "C" void FuncName ## _CppCallback();
@@ -74,6 +82,10 @@
 		friend extern "C" void FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5);
 	#define DefineCppCallback_7Arg(FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, CppCode)	\
 		friend extern "C" void FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6);
+	#define DefineCppCallback_8Arg(FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, CppCode)	\
+		friend extern "C" void FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6, ArgType7 Arg7);
+	#define DefineCppCallback_9Arg(FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, ArgType8, Arg8, CppCode)	\
+		friend extern "C" void FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6, ArgType7 Arg7, ArgType8 Arg8);
 	#define DefineCppCallback_0Arg_RetVal(ReturnType, FuncName, CppCode)	\
 		friend extern "C" ReturnType FuncName ## _CppCallback();
 	#define DefineCppCallback_1Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, CppCode)	\
@@ -90,6 +102,10 @@
 		friend extern "C" ReturnType FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5);
 	#define DefineCppCallback_7Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, CppCode)	\
 		friend extern "C" ReturnType FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6);
+	#define DefineCppCallback_8Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, CppCode)	\
+		friend extern "C" ReturnType FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6, ArgType7 Arg7);
+	#define DefineCppCallback_9Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, ArgType8, Arg8, CppCode)	\
+		friend extern "C" ReturnType FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6, ArgType7 Arg7, ArgType8 Arg8);
 #else
 	#define DefineCppCallback_0Arg(FuncName, CppCode)	\
 		extern "C" void FuncName ## _CppCallback() { CppCode }
@@ -107,6 +123,10 @@
 		extern "C" void FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5) { CppCode }
 	#define DefineCppCallback_7Arg(FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, CppCode)	\
 		extern "C" void FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6) { CppCode }
+	#define DefineCppCallback_8Arg(FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, CppCode)	\
+		extern "C" void FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6, ArgType7 Arg7) { CppCode }
+	#define DefineCppCallback_9Arg(FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, ArgType8, Arg8, CppCode)	\
+		extern "C" void FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6, ArgType7 Arg7, ArgType8 Arg8) { CppCode }
 	#define DefineCppCallback_0Arg_RetVal(ReturnType, FuncName, CppCode)	\
 		extern "C" ReturnType FuncName ## _CppCallback() { CppCode }
 	#define DefineCppCallback_1Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, CppCode)	\
@@ -123,4 +143,8 @@
 		extern "C" ReturnType FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5) { CppCode }
 	#define DefineCppCallback_7Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, CppCode)	\
 		extern "C" ReturnType FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6) { CppCode }
+	#define DefineCppCallback_8Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, CppCode)	\
+		extern "C" ReturnType FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6, ArgType7 Arg7) { CppCode }
+	#define DefineCppCallback_9Arg_RetVal(ReturnType, FuncName, ArgType0, Arg0, ArgType1, Arg1, ArgType2, Arg2, ArgType3, Arg3, ArgType4, Arg4, ArgType5, Arg5, ArgType6, Arg6, ArgType7, Arg7, ArgType8, Arg8, CppCode)	\
+		extern "C" ReturnType FuncName ## _CppCallback(ArgType0 Arg0, ArgType1 Arg1, ArgType2 Arg2, ArgType3 Arg3, ArgType4 Arg4, ArgType5 Arg5, ArgType6 Arg6, ArgType7 Arg7, ArgType8 Arg8) { CppCode }
 #endif

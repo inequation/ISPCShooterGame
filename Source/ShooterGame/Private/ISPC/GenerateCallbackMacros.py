@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 global VariantCount, File
-VariantCount = 8
+VariantCount = 10
 File = open('CppCallbackMacros.h', 'w')
 
 def EmitCallbackMacrosISPCSide(bUseReturnType):
