@@ -69,13 +69,27 @@ DefineCppCallback_5Arg(UpdatedPrimitive_InitSweepCollisionParams,
 			*Query, *Response);
 	});
 
-DefineCppCallback_7Arg(OverlapBlockingTestByChannel,
+DefineCppCallback_7Arg_RetVal(bool, OverlapBlockingTestByChannel,
 	const void*, _Comp, const FVector, Pos, const FQuat, Rot,
 	/*ECollisionChannel*/uint8, TraceChannel, const void*, _CollisionShape,
 	const /*FCollisionQueryParams**/void*, _Params, const /*FCollisionResponseParams**/void*, _ResponseParam,
 	{
-		AccessComp(GetWorld())->OverlapBlockingTestByChannel(
+		return AccessComp(GetWorld())->OverlapBlockingTestByChannel(
 			Pos, Rot, (ECollisionChannel)TraceChannel, _CollisionShape,
+			*static_cast<FCollisionQueryParams*>(_CapsuleParams),
+			*static_cast<FCollisionResponseParams*>(_ResponseParam));
+	})
+
+DefineCppCallback_9Arg_RetVal(bool, SweepSingleByChannel,
+	const void*, _Comp, /*FHitResult**/void*, _OutHit, const FVector, Start,
+	const FVector, End, const FQuat, Rot, /*ECollisionChannel*/uint8, TraceChannel,
+	const /*FCollisionShape**/void*, CollisionShape, const /*FCollisionQueryParams**/void*, Params,
+	const /*FCollisionResponseParams**/void*, ResponseParam,
+	{
+		return AccessComp(GetWorld())->SweepSingleByChannel(
+			*static_cast<FHitResult*>(_OutHit),
+			Start, End, Rot, (ECollisionChannel)TraceChannel,
+			*static_cast<FCollisionShape*>(_CollisionShape),
 			*static_cast<FCollisionQueryParams*>(_CapsuleParams),
 			*static_cast<FCollisionResponseParams*>(_ResponseParam));
 	})
@@ -90,4 +104,28 @@ DefineCppCallback_7Arg(MoveComponent,
 			static_cast<FHitResult*>(_Hit),
 			(EMoveComponentFlags)MoveFlags,
 			(ETeleportType)Teleport);
+	})
+
+DefineCppCallback_3Arg(OnStartCrouch,
+	const void*, _CharacterOwner, float, HeightAdjust, float, ScaledHeightAdjust,
+	{
+		static_cast<ACharacter*>(_CharacterOwner)->OnStartCrouch(HeightAdjust, ScaledHeightAdjust);
+	})
+
+DefineCppCallback_3Arg(OnEndCrouch,
+	const void*, _CharacterOwner, float, HeightAdjust, float, ScaledHeightAdjust,
+	{
+		static_cast<ACharacter*>(_CharacterOwner)->OnEndCrouch(HeightAdjust, ScaledHeightAdjust);
+	})
+
+DefineCppCallback_2Arg(MakeCapsuleCollisionShape,
+	FVector, Extent, /*FCollisionShape**/void*, _OutShape,
+	{
+		*static_cast<FCollisionShape*>(_OutShape) = FCollisionShape::MakeCapsule(Extent);
+	})
+
+DefineCppCallback_1Arg(ClearJumpInput,
+	const void*, _CharacterOwner,
+	{
+		static_cast<ACharacter*>(_CharacterOwner)->ClearJumpInput();
 	})

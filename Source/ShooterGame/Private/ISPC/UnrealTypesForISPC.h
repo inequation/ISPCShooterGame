@@ -18,6 +18,7 @@ typedef float<3> FVector;
 typedef float<4> FQuat;
 
 typedef unsigned int8 uint8;
+typedef unsigned int32 uint32;
 
 // NOTE: Must be identical to the definition in EngineTypes.h!
 enum EMovementMode
@@ -192,7 +193,7 @@ struct FCollisionResponseParams
 
 struct FHitResult
 {
-	// FIXME ISPC: This is a bitfield on the C++ side!
+	// ISPC: This is a bitfield on uint8 on the C++ side!
 	uint8 bBlockingHit_bStartPenetrating;
 
 	/** Face index we hit (for complex hits with triangle meshes). */
@@ -274,6 +275,27 @@ struct FHitResult
 
 	/** Name of the _my_ bone which took part in hit event (in case of two skeletal meshes colliding). */
 	FName MyBoneName;
+};
+
+struct FFindFloorResult
+{
+	// ISPC: This is a bitfield on uint32 on the C++ side!
+	/**
+	* True if there was a blocking hit in the floor test that was NOT in initial penetration.
+	* The HitResult can give more info about other circumstances.
+	*/
+	/** True if the hit found a valid walkable floor. */
+	/** True if the hit found a valid walkable floor using a line trace (rather than a sweep test, which happens when the sweep test fails to yield a walkable surface). */
+	uint32 bBlockingHit_bWalkableFloor_bLineTrace;
+
+	/** The distance to the floor, computed from the swept capsule trace. */
+	float FloorDist;
+	
+	/** The distance to the floor, computed from the trace. Only valid if bLineTrace is true. */
+	float LineDist;
+
+	/** Hit result of the test that found a floor. Includes more specific data about the point of impact and surface normal at that point. */
+	FHitResult HitResult;
 };
 
 #define FORCEINLINE	inline

@@ -60,13 +60,13 @@ inline varying float<3> insert(varying float<3> v, uniform int32 index, uniform 
 // The primary type we're working with.
 struct FISPCMovementArrays
 {
-	// The Unreal components. Intentionally opaque, only used for calls back into C++.
+	// The Unreal objects. Intentionally opaque, only used for calls back into C++.
 	const UShooterUnrolledCppMovement* const* Comp;
-
 	const USceneComponent* const* UpdatedComponent;
 	const UPrimitiveComponent* const* UpdatedPrimitive;
 	const ACharacter* const* CharacterOwner;
-	EMovementMode* MovementMode;
+	const UPrimitiveComponent* const* CharacterOwner_MovementBase;
+
 	const
 #ifdef ISPC
 		EComponentMobility
@@ -81,19 +81,23 @@ struct FISPCMovementArrays
 	const bool* const CharacterOwner_bServerMoveIgnoreRootMotion;
 	const bool* const CharacterOwner_IsMatineeControlled;
 	const bool* const CharacterOwner_HasAuthority;
-	bool* CharacterOwner_bIsCrouched;
-	const bool* const NavAgentProps_bCanCrouch;
 	const USkeletalMeshComponent* const* CharacterOwner_GetMesh;
-	FVector* const CharacterOwner_CapsuleComponent_Size;	// x = Radius, y = HalfHeight, z = ShapeScale
-	// Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>()->GetUnscaledCapsuleRadius/GetUnscaledCapsuleHalfHeight()
-	const FVector2D* const DefaultCharacter_CapsuleComponent_UnscaledSize;
-	
+	const bool* const NavAgentProps_bCanCrouch;
+	const FVector2D* const DefaultCharacter_CapsuleComponent_UnscaledSize;	// Comp->CharacterOwner->GetClass()->GetDefaultObject<ACharacter>()->GetUnscaledCapsuleRadius/GetUnscaledCapsuleHalfHeight()
 	const ECollisionChannel* const UpdatedComponent_CollisionObjectType;
 	const FCollisionShape* const PawnCapsuleCollisionShape_ShrinkCapsuleExtent_None;
-	const FCollisionShape* const PawnCapsuleCollisionShape_ShrinkCapsuleExtent_HeightCustom;
+	const bool* const CurrentRootMotion_HasActiveRootMotionSources;
+	const bool* const RootMotionParams_bHasRootMotion;
 
 	const bool* const bCrouchMaintainsBaseLocation;
+	const bool* const bWantsToCrouch;
 	const float* const CrouchedHalfHeight;
+	FFindFloorResult* CurrentFloor;
+	
+	EMovementMode* MovementMode;
+	bool* CharacterOwner_bIsCrouched;
+	FVector* const CharacterOwner_CapsuleComponent_Size;	// x = Radius, y = HalfHeight, z = ShapeScale
+	FQuat* const UpdatedComponent_ComponentQuat;
 
 	FVector* PendingImpulseToApply;
 	FVector* PendingForceToApply;
@@ -101,16 +105,8 @@ struct FISPCMovementArrays
 
 	bool* bForceNextFloorCheck;
 	bool* bShrinkProxyCapsule;
-
-	FVector* LastUpdateLocation;
-
-	const bool* const CurrentRootMotion_HasActiveRootMotionSources;
-
 	bool* bDeferUpdateBasedMovement;
 
-	const UPrimitiveComponent* const* CharacterOwner_MovementBase;
-
-	const bool* const RootMotionParams_bHasRootMotion;
-
+	FVector* LastUpdateLocation;
 	FVector* Velocity;
 };
