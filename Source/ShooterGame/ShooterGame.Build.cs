@@ -264,7 +264,7 @@ public class ShooterGame : ModuleRules
 			PreTarget = "";
 		}
 		
-		Target.PreBuildSteps.Add(string.Format("pushd {0} && " +
+		Target.PreBuildSteps.Add(string.Format("pushd \"{0}\" && " +
 			"echo Gathering ISPC dependencies && " +
 			"{1} \"{2}\" depend && " +
 			"echo Building ISPC kernels && " +
@@ -272,7 +272,7 @@ public class ShooterGame : ModuleRules
 			"popd",
 			ObjectDir,
 			MakeCmdline,
-			MakefilePath,
+			MakefileName,
 			PreTarget,
 			PostTarget
 			));
