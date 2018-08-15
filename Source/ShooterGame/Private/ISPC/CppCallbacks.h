@@ -2,12 +2,15 @@
 
 #include "CppCallbackMacros.h"
 
-#ifndef ISPC
+#ifdef ISPC
+	#define WrapISPCType(x)	x
+#else
+	#define WrapISPCType(x)	ispc::x
 	#define	AccessComp	((UShooterUnrolledCppMovement*)_Comp)
 #endif
 
 DefineCppCallback_2Arg(ConsumeRootMotion,
-	void*, _Comp, float, DeltaSeconds,
+	const void*, _Comp, float, DeltaSeconds,
 	{
 		auto* Comp = (UShooterUnrolledCppMovement*)_Comp;
 		// Consume root motion
@@ -19,10 +22,10 @@ DefineCppCallback_2Arg(ConsumeRootMotion,
 DefineCppCallback_1Arg_RetVal(bool, IsPendingKill,
 	const void*, _Obj,
 	{
-		return static_cast<UObject*>(_Obj)->IsPendingKill();
+		return static_cast<const UObject*>(_Obj)->IsPendingKill();
 	})
 
-DefineCppCallback_1Arg_RetVal(FVector, GetUpdatedComponentLocation,
+DefineCppCallback_1Arg_RetVal(WrapISPCType(FVector), GetUpdatedComponentLocation,
 	const void*, _Comp,
 	{
 		return AccessComp->UpdatedComponent->GetComponentLocation();
@@ -128,4 +131,16 @@ DefineCppCallback_1Arg(ClearJumpInput,
 	const void*, _CharacterOwner,
 	{
 		static_cast<ACharacter*>(_CharacterOwner)->ClearJumpInput();
+	})
+
+DefineCppCallback_2Arg_RetVal(float, MaybeModifyWalkableFloorZ,
+	const FWeakObjectPtr, _HitComponent, float, TestWalkableZ,
+	{
+		auto& HitComponent = *reinterpret_cast<FWeakPtr*>(&_HitComponent);
+		if (HitComponent)
+		{
+			const FWalkableSlopeOverride& SlopeOverride = HitComponent->GetWalkableSlopeOverride();
+			return SlopeOverride.ModifyWalkableFloorZ(TestWalkableZ);
+		}
+		return TestWalkableZ;
 	})

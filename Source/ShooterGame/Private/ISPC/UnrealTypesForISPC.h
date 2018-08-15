@@ -1,5 +1,10 @@
 #pragma once
 
+// HACK!!!
+#ifdef ISPC
+#define class struct
+#endif
+
 // Only pointers of these types are used in ISPC. Intentionally opaque.
 class UShooterUnrolledCppMovement;
 class USceneComponent;
@@ -12,6 +17,7 @@ class UPrimitiveComponent;
 #ifdef ISPC
 
 typedef int<3> FName;
+typedef int<2> FWeakObjectPtr;
 
 typedef float<2> FVector2D;
 typedef float<3> FVector;
@@ -262,13 +268,13 @@ struct FHitResult
 	 * Physical material that was hit.
 	 * @note Must set bReturnPhysicalMaterial on the swept PrimitiveComponent or in the query params for this to be returned.
 	 */
-	int<3>/*TWeakObjectPtr<class UPhysicalMaterial>*/ PhysMaterial;
+	FWeakObjectPtr/*TWeakObjectPtr<class UPhysicalMaterial>*/ PhysMaterial;
 
 	/** Actor hit by the trace. */
-	int<3>/*TWeakObjectPtr<class AActor>*/ Actor;
+	FWeakObjectPtr/*TWeakObjectPtr<class AActor>*/ Actor;
 
 	/** PrimitiveComponent hit by the trace. */
-	int<3>/*TWeakObjectPtr<class UPrimitiveComponent>*/ Component;
+	FWeakObjectPtr/*TWeakObjectPtr<class UPrimitiveComponent>*/ Component;
 
 	/** Name of bone we hit (for skeletal meshes). */
 	FName BoneName;
