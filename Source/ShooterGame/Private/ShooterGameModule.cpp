@@ -12,8 +12,6 @@
 #include "AssetRegistryModule.h"
 #include "IAssetRegistry.h"
 
-#include "Kernels.ispc.h"
-
 #include "UI/Style/ShooterStyle.h"
 
 

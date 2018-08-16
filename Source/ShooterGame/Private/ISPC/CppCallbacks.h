@@ -1,5 +1,3 @@
-#pragma once
-
 #include "CppCallbackMacros.h"
 
 #ifdef ISPC
@@ -67,9 +65,9 @@ DefineCppCallback_5Arg(UpdatedPrimitive_InitSweepCollisionParams,
 	{
 		// FIXME: Trace tag?
 		FName TraceTag = NAME_None;
-		FCollisionQueryParams* Query = new (_OutParams) FCollisionQueryParams(TraceTag, false, static_cast<AActor*>(_InIgnoreActor));
-		FCollisionResponseParams Response = new (_OutResponseParam) FCollisionResponseParams();
-		static_cast<UPrimitiveComponent*>(_UpdatedPrimitive)->InitSweepCollisionParams(
+		FCollisionQueryParams* Query = new (_OutParams) FCollisionQueryParams(TraceTag, false, (AActor*)_InIgnoreActor);
+		FCollisionResponseParams* Response = new (_OutResponseParam) FCollisionResponseParams();
+		((UPrimitiveComponent*)_UpdatedPrimitive)->InitSweepCollisionParams(
 			*Query, *Response);
 	});
 
@@ -78,30 +76,31 @@ DefineCppCallback_7Arg_RetVal(bool, OverlapBlockingTestByChannel,
 	/*ECollisionChannel*/uint8, TraceChannel, const void*, _CollisionShape,
 	const /*FCollisionQueryParams**/void*, _Params, const /*FCollisionResponseParams**/void*, _ResponseParam,
 	{
-		return AccessComp(GetWorld())->OverlapBlockingTestByChannel(
-			Pos, Rot, (ECollisionChannel)TraceChannel, _CollisionShape,
-			*static_cast<FCollisionQueryParams*>(_CapsuleParams),
-			*static_cast<FCollisionResponseParams*>(_ResponseParam));
+		return AccessComp->GetWorld()->OverlapBlockingTestByChannel(
+			Pos, Rot, (ECollisionChannel)TraceChannel,
+			*((FCollisionShape*)_CollisionShape),
+			*((FCollisionQueryParams*)_Params),
+			*((FCollisionResponseParams*)_ResponseParam));
 	})
 
 DefineCppCallback_9Arg_RetVal(bool, SweepSingleByChannel,
 	const void*, _Comp, /*FHitResult**/void*, _OutHit, const FVector, Start,
 	const FVector, End, const FQuat, Rot, /*ECollisionChannel*/uint8, TraceChannel,
-	const /*FCollisionShape**/void*, CollisionShape, const /*FCollisionQueryParams**/void*, Params,
-	const /*FCollisionResponseParams**/void*, ResponseParam,
+	const /*FCollisionShape**/void*, _CollisionShape, const /*FCollisionQueryParams**/void*, _Params,
+	const /*FCollisionResponseParams**/void*, _ResponseParam,
 	{
-		return AccessComp(GetWorld())->SweepSingleByChannel(
+		return AccessComp->GetWorld()->SweepSingleByChannel(
 			*static_cast<FHitResult*>(_OutHit),
 			Start, End, Rot, (ECollisionChannel)TraceChannel,
-			*static_cast<FCollisionShape*>(_CollisionShape),
-			*static_cast<FCollisionQueryParams*>(_CapsuleParams),
-			*static_cast<FCollisionResponseParams*>(_ResponseParam));
+			*((FCollisionShape*)_CollisionShape),
+			*((FCollisionQueryParams*)_Params),
+			*((FCollisionResponseParams*)_ResponseParam));
 	})
 
 DefineCppCallback_7Arg(MoveComponent,
 	const void*, _Comp, const FVector, Delta, const FQuat, NewRotation, bool, bSweep, /*FHitResult**/void*, _Hit, /*EMoveComponentFlags*/uint8, MoveFlags, /*ETeleportType*/uint8, Teleport,
 	{
-		static_cast<USceneComponent*>(_Comp)->MoveComponent(
+		((USceneComponent*)_Comp)->MoveComponent(
 			Delta,
 			NewRotation,
 			bSweep,
@@ -113,13 +112,13 @@ DefineCppCallback_7Arg(MoveComponent,
 DefineCppCallback_3Arg(OnStartCrouch,
 	const void*, _CharacterOwner, float, HeightAdjust, float, ScaledHeightAdjust,
 	{
-		static_cast<ACharacter*>(_CharacterOwner)->OnStartCrouch(HeightAdjust, ScaledHeightAdjust);
+		((ACharacter*)_CharacterOwner)->OnStartCrouch(HeightAdjust, ScaledHeightAdjust);
 	})
 
 DefineCppCallback_3Arg(OnEndCrouch,
 	const void*, _CharacterOwner, float, HeightAdjust, float, ScaledHeightAdjust,
 	{
-		static_cast<ACharacter*>(_CharacterOwner)->OnEndCrouch(HeightAdjust, ScaledHeightAdjust);
+		((ACharacter*)_CharacterOwner)->OnEndCrouch(HeightAdjust, ScaledHeightAdjust);
 	})
 
 DefineCppCallback_2Arg(MakeCapsuleCollisionShape,
@@ -131,13 +130,14 @@ DefineCppCallback_2Arg(MakeCapsuleCollisionShape,
 DefineCppCallback_1Arg(ClearJumpInput,
 	const void*, _CharacterOwner,
 	{
-		static_cast<ACharacter*>(_CharacterOwner)->ClearJumpInput();
+		((ACharacter*)_CharacterOwner)->ClearJumpInput();
 	})
 
 DefineCppCallback_2Arg_RetVal(float, MaybeModifyWalkableFloorZ,
 	const FWeakObjectPtr, _HitComponent, float, TestWalkableZ,
 	{
-		auto& HitComponent = *reinterpret_cast<FWeakPtr*>(&_HitComponent);
+		auto& HitObject = *const_cast<FWeakObjectPtr*>(&_HitComponent);
+		const UPrimitiveComponent* HitComponent = Cast<UPrimitiveComponent>(HitObject.Get());
 		if (HitComponent)
 		{
 			const FWalkableSlopeOverride& SlopeOverride = HitComponent->GetWalkableSlopeOverride();
