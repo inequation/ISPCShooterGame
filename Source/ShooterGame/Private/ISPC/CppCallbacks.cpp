@@ -27,4 +27,4 @@ static_assert(offsetof(ispc::FHitResult, BoneName) == offsetof(FHitResult, BoneN
 static_assert(offsetof(ispc::FHitResult, MyBoneName) == offsetof(FHitResult, MyBoneName), "Type binary layouts don't match");
 static_assert(sizeof(ispc::FHitResult) == sizeof(FHitResult), "Type sizes don't match");
 
-#include "CppCallbacks.h"
+#include "CppCallbacks.inl"

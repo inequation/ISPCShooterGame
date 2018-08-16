@@ -9,7 +9,7 @@
 
 #if CPP	// Ignore in Unreal Header Tool.
 	#define EMIT_FORWARD_DECLARATIONS
-	#include "ISPC/CppCallbacks.h"
+	#include "ISPC/CppCallbacks.inl"
 	#undef EMIT_FORWARD_DECLARATIONS
 #endif
 
@@ -32,7 +32,7 @@ public:
 
 #if CPP	// Ignore in Unreal Header Tool.
 	#define EMIT_FRIEND_DECLARATIONS
-	#include "ISPC/CppCallbacks.h"
+	#include "ISPC/CppCallbacks.inl"
 	#undef EMIT_FRIEND_DECLARATIONS
 #endif
 };

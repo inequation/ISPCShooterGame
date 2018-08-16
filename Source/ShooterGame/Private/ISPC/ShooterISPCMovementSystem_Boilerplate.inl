@@ -29,7 +29,7 @@ struct FISPCMovementContext
 
 #define CtxAccess(Field)	(Ctx.Arrays->Field[Ctx.Index])
 
-#include "CppCallbacks.h"
+#include "CppCallbacks.inl"
 
 #define UNIMPLEMENTED_CODE	0
 
