@@ -4,6 +4,7 @@
 
 #pragma once
 #include "Player/ShooterCharacterMovement.h"
+#include "ShooterISPCMovementSystem.ispc.h"
 #include "ShooterUnrolledCppMovement.generated.h"
 
 UCLASS()
@@ -22,6 +23,12 @@ public:
 	virtual void PerformMovement(float DeltaTime) override;
 
 	friend class UShooterUnrolledCppMovementSystem;
+
+#if CPP	// Ignore in Unreal Header Tool.
+	#define EMIT_FRIEND_DECLARATIONS
+	#include "ISPC/CppCallbacks.h"
+	#undef EMIT_FRIEND_DECLARATIONS
+#endif
 };
 
 USTRUCT()
