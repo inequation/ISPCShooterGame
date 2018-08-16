@@ -3,9 +3,9 @@
 #include "CppCallbackMacros.h"
 
 #ifdef ISPC
-	#define WrapISPCType(x)	x
+	#define Marshalled_FVector	FVector
 #else
-	#define WrapISPCType(x)	ispc::x
+	#define Marshalled_FVector	ispc::float3
 	#define	AccessComp	((UShooterUnrolledCppMovement*)_Comp)
 #endif
 
@@ -25,10 +25,11 @@ DefineCppCallback_1Arg_RetVal(bool, IsPendingKill,
 		return static_cast<const UObject*>(_Obj)->IsPendingKill();
 	})
 
-DefineCppCallback_1Arg_RetVal(WrapISPCType(FVector), GetUpdatedComponentLocation,
+DefineCppCallback_1Arg_RetVal(Marshalled_FVector, GetUpdatedComponentLocation,
 	const void*, _Comp,
 	{
-		return AccessComp->UpdatedComponent->GetComponentLocation();
+		FVector Result = AccessComp->UpdatedComponent->GetComponentLocation();
+		return *reinterpret_cast<ispc::float3*>(&Result);
 	})
 
 DefineCppCallback_2Arg(SetCharacterOwner_bIsCrouched,

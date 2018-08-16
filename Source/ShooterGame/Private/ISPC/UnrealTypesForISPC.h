@@ -219,40 +219,40 @@ struct FHitResult
 	 * Example: for a sphere trace test, this is the point where the center of the sphere would be located when it touched the other object.
 	 * For swept movement (but not queries) this may not equal the final location of the shape since hits are pulled back slightly to prevent precision issues from overlapping another surface.
 	 */
-	FVector Location;
+	/*FVector*/float Location[3];
 
 	/**
 	 * Location in world space of the actual contact of the trace shape (box, sphere, ray, etc) with the impacted object.
 	 * Example: for a sphere trace test, this is the point where the surface of the sphere touches the other object.
 	 * @note: In the case of initial overlap (bStartPenetrating=true), ImpactPoint will be the same as Location because there is no meaningful single impact point to report.
 	 */
-	FVector ImpactPoint;
+	/*FVector*/float ImpactPoint[3];
 
 	/**
 	 * Normal of the hit in world space, for the object that was swept. Equal to ImpactNormal for line tests.
 	 * This is computed for capsules and spheres, otherwise it will be the same as ImpactNormal.
 	 * Example: for a sphere trace test, this is a normalized vector pointing in towards the center of the sphere at the point of impact.
 	 */
-	FVector Normal;
+	/*FVector*/float Normal[3];
 
 	/**
 	 * Normal of the hit in world space, for the object that was hit by the sweep, if any.
 	 * For example if a box hits a flat plane, this is a normalized vector pointing out from the plane.
 	 * In the case of impact with a corner or edge of a surface, usually the "most opposing" normal (opposed to the query direction) is chosen.
 	 */
-	FVector ImpactNormal;
+	/*FVector*/float ImpactNormal[3];
 
 	/**
 	 * Start location of the trace.
 	 * For example if a sphere is swept against the world, this is the starting location of the center of the sphere.
 	 */
-	FVector TraceStart;
+	/*FVector*/float TraceStart[3];
 
 	/**
 	 * End location of the trace; this is NOT where the impact occurred (if any), but the furthest point in the attempted sweep.
 	 * For example if a sphere is swept against the world, this would be the center of the sphere if there was no blocking hit.
 	 */
-	FVector TraceEnd;
+	/*FVector*/float TraceEnd[3];
 
 	/**
 	  * If this test started in penetration (bStartPenetrating is true) and a depenetration vector can be computed,
@@ -268,19 +268,19 @@ struct FHitResult
 	 * Physical material that was hit.
 	 * @note Must set bReturnPhysicalMaterial on the swept PrimitiveComponent or in the query params for this to be returned.
 	 */
-	FWeakObjectPtr/*TWeakObjectPtr<class UPhysicalMaterial>*/ PhysMaterial;
+	/*TWeakObjectPtr<class UPhysicalMaterial>*/int PhysMaterial[2];
 
 	/** Actor hit by the trace. */
-	FWeakObjectPtr/*TWeakObjectPtr<class AActor>*/ Actor;
+	/*TWeakObjectPtr<class AActor>*/int Actor[2];
 
 	/** PrimitiveComponent hit by the trace. */
-	FWeakObjectPtr/*TWeakObjectPtr<class UPrimitiveComponent>*/ Component;
+	/*TWeakObjectPtr<class UPrimitiveComponent>*/int Component[2];
 
 	/** Name of bone we hit (for skeletal meshes). */
-	FName BoneName;
+	/*FName*/int BoneName[3];
 
 	/** Name of the _my_ bone which took part in hit event (in case of two skeletal meshes colliding). */
-	FName MyBoneName;
+	/*FName*/int MyBoneName[3];
 };
 
 struct FFindFloorResult

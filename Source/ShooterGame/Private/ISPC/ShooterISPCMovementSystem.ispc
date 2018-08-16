@@ -9,7 +9,7 @@ static bool IsWalkable(const FHitResult& Hit, const float WalkableFloorZ)
 	}
 
 	// Never walk up vertical surfaces.
-	if (Hit.ImpactNormal.z < KINDA_SMALL_NUMBER)
+	if (Hit.ImpactNormal[2] < KINDA_SMALL_NUMBER)
 	{
 		return false;
 	}
@@ -17,10 +17,11 @@ static bool IsWalkable(const FHitResult& Hit, const float WalkableFloorZ)
 	varying float TestWalkableZ = WalkableFloorZ;
 
 	// See if this component overrides the walkable floor z.
-	TestWalkableZ = MaybeModifyWalkableFloorZ(Hit.Component, TestWalkableZ);
+	FWeakObjectPtr HitComponent = { Hit.Component[0], Hit.Component[1] };
+	TestWalkableZ = MaybeModifyWalkableFloorZ(HitComponent, TestWalkableZ);
 
 	// Can't walk on this surface if it is too steep.
-	if (Hit.ImpactNormal.z < TestWalkableZ)
+	if (Hit.ImpactNormal[2] < TestWalkableZ)
 	{
 		return false;
 	}
