@@ -7,6 +7,12 @@
 #include "ShooterISPCMovementSystem.ispc.h"
 #include "ShooterUnrolledCppMovement.generated.h"
 
+#if CPP	// Ignore in Unreal Header Tool.
+	#define EMIT_FORWARD_DECLARATIONS
+	#include "ISPC/CppCallbacks.h"
+	#undef EMIT_FORWARD_DECLARATIONS
+#endif
+
 UCLASS()
 class UShooterUnrolledCppMovement : public UShooterCharacterMovement
 {
