@@ -72,8 +72,8 @@ void SetUpdatedComponent(FISPCMovementContext Ctx, const /*USceneComponent**/voi
 	CtxAccess(bDeferUpdateMoveComponent) = false;
 	CtxAccess(DeferredUpdatedMoveComponent) = NULL;
 
-	USceneComponent* OldUpdatedComponent = Comp->UpdatedComponent;
-	UPrimitiveComponent* OldPrimitive = Cast<UPrimitiveComponent>(Comp->UpdatedComponent);
+	USceneComponent* OldUpdatedComponent = CtxAccess(UpdatedComponent);
+	UPrimitiveComponent* OldPrimitive = Cast<UPrimitiveComponent>(CtxAccess(UpdatedComponent));
 	if (IsValid(OldPrimitive) && OldPrimitive->OnComponentBeginOverlap.IsBound())
 	{
 #if 1	// TODO ISPC: Member is private.
@@ -95,46 +95,46 @@ void SetUpdatedComponent(FISPCMovementContext Ctx, const /*USceneComponent**/voi
 
 		{
 			// ISPC: Inlined call to UMovementComponent::SetUpdatedComponent().
-			if (Comp->UpdatedComponent && Comp->UpdatedComponent != NewUpdatedComponent)
+			if (CtxAccess(UpdatedComponent) && CtxAccess(UpdatedComponent) != NewUpdatedComponent)
 			{
-				Comp->UpdatedComponent->bShouldUpdatePhysicsVolume = false;
-				if (!Comp->UpdatedComponent->IsPendingKill())
+				CtxAccess(UpdatedComponent)->bShouldUpdatePhysicsVolume = false;
+				if (!CtxAccess(UpdatedComponent)->IsPendingKill())
 				{
-					Comp->UpdatedComponent->SetPhysicsVolume(NULL, true);
-					Comp->UpdatedComponent->PhysicsVolumeChangedDelegate.RemoveDynamic(Ctx, &UMovementComponent::PhysicsVolumeChanged);
+					CtxAccess(UpdatedComponent)->SetPhysicsVolume(NULL, true);
+					CtxAccess(UpdatedComponent)->PhysicsVolumeChangedDelegate.RemoveDynamic(Ctx, &UMovementComponent::PhysicsVolumeChanged);
 				}
 
 				// remove from tick prerequisite
-				Comp->UpdatedComponent->PrimaryComponentTick.RemovePrerequisite(Ctx, Comp->PrimaryComponentTick);
+				CtxAccess(UpdatedComponent)->PrimaryComponentTick.RemovePrerequisite(Ctx, Comp->PrimaryComponentTick);
 			}
 
 			// Don't assign pending kill components, but allow those to null out previous UpdatedComponent.
-			Comp->UpdatedComponent = IsValid(NewUpdatedComponent) ? NewUpdatedComponent : NULL;
-			Comp->UpdatedPrimitive = Cast<UPrimitiveComponent>(Comp->UpdatedComponent);
+			CtxAccess(UpdatedComponent) = IsValid(NewUpdatedComponent) ? NewUpdatedComponent : NULL;
+			Comp->UpdatedPrimitive = Cast<UPrimitiveComponent>(CtxAccess(UpdatedComponent));
 
 			// Assign delegates
-			if (Comp->UpdatedComponent && !Comp->UpdatedComponent->IsPendingKill())
+			if (CtxAccess(UpdatedComponent) && !CtxAccess(UpdatedComponent)->IsPendingKill())
 			{
-				Comp->UpdatedComponent->bShouldUpdatePhysicsVolume = true;
-				Comp->UpdatedComponent->PhysicsVolumeChangedDelegate.AddUniqueDynamic(Ctx, &UMovementComponent::PhysicsVolumeChanged);
+				CtxAccess(UpdatedComponent)->bShouldUpdatePhysicsVolume = true;
+				CtxAccess(UpdatedComponent)->PhysicsVolumeChangedDelegate.AddUniqueDynamic(Ctx, &UMovementComponent::PhysicsVolumeChanged);
 
 	#if 0	// TODO ISPC
 				if (!Comp->bInOnRegister && !Comp->bInInitializeComponent)
 	#endif
 				{
 					// UpdateOverlaps() in component registration will take care of this.
-					Comp->UpdatedComponent->UpdatePhysicsVolume(true);
+					CtxAccess(UpdatedComponent)->UpdatePhysicsVolume(true);
 				}
 
 				// force ticks after movement component updates
-				Comp->UpdatedComponent->PrimaryComponentTick.AddPrerequisite(Ctx, Comp->PrimaryComponentTick);
+				CtxAccess(UpdatedComponent)->PrimaryComponentTick.AddPrerequisite(Ctx, Comp->PrimaryComponentTick);
 			}
 
 			Comp->UpdateTickRegistration();
 
 			if (Comp->bSnapToPlaneAtStart)
 			{
-				SnapUpdatedComponentToPlane(Comp);
+				SnapUpdatedComponentToPlane(Ctx);
 			}
 		}
 
@@ -142,14 +142,14 @@ void SetUpdatedComponent(FISPCMovementContext Ctx, const /*USceneComponent**/voi
 	}
 	CtxAccess(CharacterOwner) = Cast<ACharacter>(Comp->PawnOwner);
 
-	if (Comp->UpdatedComponent != OldUpdatedComponent)
+	if (CtxAccess(UpdatedComponent) != OldUpdatedComponent)
 	{
-		ClearAccumulatedForces(Comp);
+		ClearAccumulatedForces(Ctx);
 	}
 
-	if (Comp->UpdatedComponent == NULL)
+	if (CtxAccess(UpdatedComponent) == NULL)
 	{
-		StopActiveMovement(Comp);
+		StopActiveMovement(Ctx);
 	}
 
 	const bool bValidUpdatedPrimitive = IsValid(Comp->UpdatedPrimitive);
@@ -239,7 +239,7 @@ void PerformMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 	// Scoped updates can improve performance of multiple MoveComponent calls.
 	{
 #if 0	// TODO ISPC
-		FScopedMovementUpdate ScopedMovementUpdate(Comp->UpdatedComponent, Comp->bEnableScopedMovementUpdates ? EScopedUpdate::DeferredUpdates : EScopedUpdate::ImmediateUpdates);
+		FScopedMovementUpdate ScopedMovementUpdate(CtxAccess(UpdatedComponent), Comp->bEnableScopedMovementUpdates ? EScopedUpdate::DeferredUpdates : EScopedUpdate::ImmediateUpdates);
 #endif
 
 		MaybeUpdateBasedMovement(Ctx, DeltaSeconds);
@@ -369,10 +369,10 @@ void PerformMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 		}
 
 		// Apply Root Motion to Velocity
-		if (Comp->CurrentRootMotion.HasOverrideVelocity() || HasAnimRootMotion(Comp))
+		if (Comp->CurrentRootMotion.HasOverrideVelocity() || HasAnimRootMotion(Ctx))
 		{
 			// Animation root motion overrides Velocity and currently doesn't allow any other root motion sources
-			if (HasAnimRootMotion(Comp))
+			if (HasAnimRootMotion(Ctx))
 			{
 				// Convert to world space (animation root motion is always local)
 				USkeletalMeshComponent * SkelMeshComp = CtxAccess(CharacterOwner)_GetMesh;
@@ -434,7 +434,7 @@ void PerformMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 #endif	// TODO ISPC
 
 		// NaN tracking
-		checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("UCharacterMovementComponent::PerformMovement: Velocity contains NaN (%s)\n%s"), *GetPathNameSafe(Comp), *CtxAccess(Velocity).ToString()));
+		checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("UCharacterMovementComponent::PerformMovement: Velocity contains NaN (%s)\n%s"), *GetPathNameSafe(Ctx), *CtxAccess(Velocity).ToString()));
 
 		// Clear jump input now, to allow movement events to trigger it for next update.
 		ClearJumpInput(CtxAccess(CharacterOwner));
@@ -475,7 +475,7 @@ void PerformMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 			{
 				const FRotator OldActorRotation = OldActorRotationQuat.Rotator();
 				const FVector ResultingLocation = GetUpdatedComponentLocation(Ctx);
-				const FRotator ResultingRotation = Comp->UpdatedComponent->GetComponentRotation();
+				const FRotator ResultingRotation = CtxAccess(UpdatedComponent)->GetComponentRotation();
 
 				// Show current position
 				DrawDebugCoordinateSystem(GetWorld(), CtxAccess(CharacterOwner)_GetMesh->GetComponentLocation() + FVector(0, 0, 1), ResultingRotation, 50.f, false);
@@ -485,7 +485,7 @@ void PerformMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 
 				// Log details.
 				UE_LOG(LogRootMotion, Warning, TEXT("PerformMovement Resulting DeltaMove Translation: %s, Rotation: %s, MovementBase: %s"),
-					*(ResultingLocation - OldLocation).ToCompactString(), *(ResultingRotation - OldActorRotation).GetNormalized().ToCompactString(), *GetNameSafe(CtxAccess(CharacterOwner)->GetMovementBase()));
+					*(ResultingLocation - OldLocation).ToCompactString(), *(ResultingRotation - OldActorRotation).GetNormalized().ToCompactString(), *GetNameSafe(CtxAccess(CharacterOwner_MovementBase)));
 
 				const FVector RMTranslation = Comp->RootMotionParams.GetRootMotionTransform().GetTranslation();
 				const FRotator RMRotation = Comp->RootMotionParams.GetRootMotionTransform().GetRotation().Rotator();
@@ -507,7 +507,6 @@ void PerformMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 #endif
 	} // End scoped movement update
 
-#if UNIMPLEMENTED_CODE	// TODO ISPC Actual
 	// Call external post-movement events. These happen after the scoped movement completes in case the events want to use the current state of overlaps etc.
 	CallMovementUpdateDelegate(Ctx, DeltaSeconds, OldLocation, OldVelocity);
 
@@ -516,47 +515,28 @@ void PerformMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 
 	const bool bHasAuthority = CtxAccess(CharacterOwner) && CtxAccess(CharacterOwner_HasAuthority);
 
-	// TODO ISPC: Uniformize UNetDriver::IsAdaptiveNetUpdateFrequencyEnabled() and foreach_active this entire if.
 	// If we move we want to avoid a long delay before replication catches up to notice this change, especially if it's throttling our rate.
-	if (bHasAuthority && UNetDriver::IsAdaptiveNetUpdateFrequencyEnabled() && Comp->UpdatedComponent)
+	if (bHasAuthority && Ctx.Arrays->UNetDriver_IsAdaptiveNetUpdateFrequencyEnabled && CtxAccess(UpdatedComponent))
 	{
-		const UWorld* MyWorld = GetWorld();
-		if (MyWorld)
-		{
-			UNetDriver* NetDriver = MyWorld->GetNetDriver();
-			if (NetDriver && NetDriver->IsServer())
-			{
-				FNetworkObjectInfo* NetActor = NetDriver->FindOrAddNetworkObjectInfo(CtxAccess(CharacterOwner));
-
-				if (NetActor && MyWorld->GetTimeSeconds() <= NetActor->NextUpdateTime && NetDriver->IsNetworkActorUpdateFrequencyThrottled(*NetActor))
-				{
-					if (Comp->ShouldCancelAdaptiveReplication())
-					{
-						NetDriver->CancelAdaptiveReplication(*NetActor);
-					}
-				}
-			}
-		}
+		CancelAdaptiveReplication(CtxAccess(Comp));
 	}
 
-	const FVector NewLocation = Comp->UpdatedComponent ? GetUpdatedComponentLocation(Ctx) : FVector_ZeroVector;
-	const FQuat NewRotation = Comp->UpdatedComponent ? CtxAccess(UpdatedComponent_ComponentQuat) : FQuat_Identity;
+	const FVector NewLocation = CtxAccess(UpdatedComponent) ? GetUpdatedComponentLocation(Ctx) : FVector_ZeroVector;
+	const FQuat NewRotation = CtxAccess(UpdatedComponent) ? CtxAccess(UpdatedComponent_ComponentQuat) : FQuat_Identity;
 
-	if (bHasAuthority && Comp->UpdatedComponent && !Comp->IsNetMode(NM_Client))
+	if (bHasAuthority && CtxAccess(UpdatedComponent) && !CtxAccess(NetMode) == NM_Client)
 	{
-		const bool bLocationChanged = (NewLocation != Comp->LastUpdateLocation);
-		const bool bRotationChanged = (NewRotation != Comp->LastUpdateRotation);
+		const bool bLocationChanged = !FVector_Equal(NewLocation, CtxAccess(LastUpdateLocation));
+		const bool bRotationChanged = !FQuat_Equal(NewRotation, CtxAccess(LastUpdateRotation));
 		if (bLocationChanged || bRotationChanged)
 		{
-			const UWorld* MyWorld = GetWorld();
-			Comp->ServerLastTransformUpdateTimeStamp = MyWorld ? MyWorld->GetTimeSeconds() : 0.f;
+			CtxAccess(ServerLastTransformUpdateTimeStamp) = Ctx.Arrays->WorldTimeSeconds;
 		}
 	}
 
 	CtxAccess(LastUpdateLocation) = NewLocation;
 	CtxAccess(LastUpdateRotation) = NewRotation;
 	CtxAccess(LastUpdateVelocity) = CtxAccess(Velocity);
-#endif	// TODO ISPC Actual
 }
 
 export void Tick(uniform float DeltaSeconds, uniform FISPCMovementArrays* uniform Arrays, uniform int Count)
@@ -570,22 +550,19 @@ export void Tick(uniform float DeltaSeconds, uniform FISPCMovementArrays* unifor
 	}
 }
 
-#if UNIMPLEMENTED_CODE
-void CallMovementUpdateDelegate(FISPCMovementContext Ctx, float DeltaTime, const FVector& OldLocation, const FVector& OldVelocity)
+void CallMovementUpdateDelegate(FISPCMovementContext Ctx, float DeltaTime, const FVector OldLocation, const FVector OldVelocity)
 {
 	SCOPE_CYCLE_COUNTER(STAT_CharMoveUpdateDelegate);
 
 	// Update component velocity in case events want to read it
-	UpdateComponentVelocity(Comp);
+	UpdateComponentVelocity(Ctx);
 
 	// Delegate (for blueprints)
 	if (CtxAccess(CharacterOwner))
 	{
-		// TODO ISPC: foreach_active
-		CtxAccess(CharacterOwner)->OnCharacterMovementUpdated.Broadcast(DeltaTime, OldLocation, OldVelocity);
+		OnCharacterMovementUpdated(CtxAccess(CharacterOwner), DeltaTime, OldLocation, OldVelocity);
 	}
 }
-#endif
 
 void UpdateCharacterStateBeforeMovement(FISPCMovementContext Ctx)
 {
@@ -689,24 +666,18 @@ bool IsCrouching(FISPCMovementContext Ctx)
 #if UNIMPLEMENTED_CODE
 APhysicsVolume* GetPhysicsVolume(FISPCMovementContext Ctx) const
 {
-	if (Comp->UpdatedComponent)
+	if (CtxAccess(UpdatedComponent))
 	{
-		return Comp->UpdatedComponent->GetPhysicsVolume();
+		return CtxAccess(UpdatedComponent)->GetPhysicsVolume();
 	}
 
 	return GetWorld()->GetDefaultPhysicsVolume();
 }
-
-float GetGravityZ(FISPCMovementContext Ctx) const
-{
-	return (GetPhysicsVolume(Comp)->GetGravityZ()) * Comp->GravityScale;
-}
 #endif
 
-bool MovementBaseUtility_UseRelativeLocation(const /*UPrimitiveComponent**/void*)
+float GetGravityZ(FISPCMovementContext Ctx)
 {
-	unimplemented();
-	return false;
+	return GetPhysicsVolume_GetGravityZ(CtxAccess(UpdatedComponent)) * CtxAccess(GravityScale);
 }
 
 FVector GetPawnCapsuleExtent(FISPCMovementContext Ctx, const FVector2D CustomShrinkAmount)
@@ -801,14 +772,14 @@ float GetValidPerchRadius(FISPCMovementContext Ctx) const
 	if (CtxAccess(CharacterOwner))
 	{
 		const float PawnRadius = CtxAccess(CharacterOwner)->GetCapsuleComponent()->GetScaledCapsuleRadius();
-		return FMath::Clamp(PawnRadius - GetPerchRadiusThreshold(Comp), 0.1f, PawnRadius);
+		return FMath::Clamp(PawnRadius - GetPerchRadiusThreshold(Ctx), 0.1f, PawnRadius);
 	}
 	return 0.f;
 }
 
 bool IsInWater(FISPCMovementContext Ctx) const
 {
-	const APhysicsVolume* PhysVolume = GetPhysicsVolume(Comp);
+	const APhysicsVolume* PhysVolume = GetPhysicsVolume(Ctx);
 	return PhysVolume && PhysVolume->bWaterVolume;
 }
 
@@ -887,10 +858,10 @@ FVector GetFallingLateralAcceleration(FISPCMovementContext Ctx, float DeltaTime)
 	FVector FallAcceleration = FVector(CtxAccess(Acceleration).x, CtxAccess(Acceleration).y, 0.f);
 
 	// bound acceleration, falling object has minimal ability to impact acceleration
-	if (!HasAnimRootMotion(Comp) && FallAcceleration.SizeSquared2D() > 0.f)
+	if (!HasAnimRootMotion(Ctx) && FallAcceleration.SizeSquared2D() > 0.f)
 	{
 		FallAcceleration = GetAirControl(Ctx, DeltaTime, Comp->AirControl, FallAcceleration);
-		FallAcceleration = FallAcceleration.GetClampedToMaxSize(GetMaxAcceleration(Comp));
+		FallAcceleration = FallAcceleration.GetClampedToMaxSize(GetMaxAcceleration(Ctx));
 	}
 
 	return FallAcceleration;
@@ -914,7 +885,7 @@ float GetSimulationTimeStep(FISPCMovementContext Ctx, float RemainingTime, int32
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 			if ((s_WarningCount++ < 100) || (GFrameCounter & 15) == 0)
 			{
-				UE_LOG(LogISPCCharacterMovement, Warning, TEXT("GetSimulationTimeStep() - Max iterations %d hit while remaining time %.6f > MaxSimulationTimeStep (%.3f) for '%s', movement '%s'"), CtxAccess(MaxSimulationIterations), RemainingTime, Comp->MaxSimulationTimeStep, *GetNameSafe(CtxAccess(CharacterOwner)), *GetMovementName(Comp));
+				UE_LOG(LogISPCCharacterMovement, Warning, TEXT("GetSimulationTimeStep() - Max iterations %d hit while remaining time %.6f > MaxSimulationTimeStep (%.3f) for '%s', movement '%s'"), CtxAccess(MaxSimulationIterations), RemainingTime, Comp->MaxSimulationTimeStep, *GetNameSafe(CtxAccess(CharacterOwner)), *GetMovementName(Ctx));
 			}
 #endif
 		}
@@ -927,14 +898,14 @@ float GetSimulationTimeStep(FISPCMovementContext Ctx, float RemainingTime, int32
 void CalcVelocity(FISPCMovementContext Ctx, float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration)
 {
 	// Do not update velocity when using root motion or when SimulatedProxy - SimulatedProxy are repped their Velocity
-	if (!HasValidData(Ctx) || HasAnimRootMotion(Comp) || DeltaTime < MIN_TICK_TIME || (CtxAccess(CharacterOwner) && CtxAccess(CharacterOwner_Role) == ROLE_SimulatedProxy))
+	if (!HasValidData(Ctx) || HasAnimRootMotion(Ctx) || DeltaTime < MIN_TICK_TIME || (CtxAccess(CharacterOwner) && CtxAccess(CharacterOwner_Role) == ROLE_SimulatedProxy))
 	{
 		return;
 	}
 
 	Friction = FMath::Max(0.f, Friction);
-	const float MaxAccel = GetMaxAcceleration(Comp);
-	float MaxSpeed = GetMaxSpeed(Comp);
+	const float MaxAccel = GetMaxAcceleration(Ctx);
+	float MaxSpeed = GetMaxSpeed(Ctx);
 	
 	// Check if path following requested movement
 	bool bZeroRequestedAcceleration = true;
@@ -956,7 +927,7 @@ void CalcVelocity(FISPCMovementContext Ctx, float DeltaTime, float Friction, boo
 		}
 		else 
 		{
-			CtxAccess(Acceleration) = MaxAccel * (CtxAccess(Velocity).SizeSquared() < SMALL_NUMBER ? Comp->UpdatedComponent->GetForwardVector() : CtxAccess(Velocity).GetSafeNormal());
+			CtxAccess(Acceleration) = MaxAccel * (CtxAccess(Velocity).SizeSquared() < SMALL_NUMBER ? CtxAccess(UpdatedComponent)->GetForwardVector() : CtxAccess(Velocity).GetSafeNormal());
 		}
 
 		Comp->AnalogInputModifier = 1.f;
@@ -964,7 +935,7 @@ void CalcVelocity(FISPCMovementContext Ctx, float DeltaTime, float Friction, boo
 
 	// Path following above didn't care about the analog modifier, but we do for everything else below, so get the fully modified value.
 	// Use max of requested speed and max speed if we modified the speed in ApplyRequestedMove above.
-	MaxSpeed = FMath::Max3(RequestedSpeed, MaxSpeed * Comp->AnalogInputModifier, GetMinAnalogSpeed(Comp));
+	MaxSpeed = FMath::Max3(RequestedSpeed, MaxSpeed * Comp->AnalogInputModifier, GetMinAnalogSpeed(Ctx));
 
 	// Apply braking or deceleration
 	const bool bZeroAcceleration = FVector_IsZero(CtxAccess(Acceleration));
@@ -1021,20 +992,20 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		return;
 	}
 
-	if (!CtxAccess(CharacterOwner) || (!CtxAccess(CharacterOwner)->Controller && !Comp->bRunPhysicsWithNoController && !HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity() && (CtxAccess(CharacterOwner_Role) != ROLE_SimulatedProxy)))
+	if (!CtxAccess(CharacterOwner) || (!CtxAccess(CharacterOwner)->Controller && !Comp->bRunPhysicsWithNoController && !HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity() && (CtxAccess(CharacterOwner_Role) != ROLE_SimulatedProxy)))
 	{
 		CtxAccess(Acceleration) = FVector_ZeroVector;
 		CtxAccess(Velocity) = FVector_ZeroVector;
 		return;
 	}
 
-	if (!Comp->UpdatedComponent->IsQueryCollisionEnabled())
+	if (!CtxAccess(UpdatedComponent)->IsQueryCollisionEnabled())
 	{
 		SetMovementMode(Ctx, MOVE_Walking);
 		return;
 	}
 
-	checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("PhysWalking: Velocity contains NaN before Iteration (%s)\n%s"), *GetPathNameSafe(Comp), *CtxAccess(Velocity).ToString()));
+	checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("PhysWalking: Velocity contains NaN before Iteration (%s)\n%s"), *GetPathNameSafe(Ctx), *CtxAccess(Velocity).ToString()));
 
 	Comp->bJustTeleported = false;
 	bool bCheckedFall = false;
@@ -1042,7 +1013,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 	float remainingTime = deltaTime;
 
 	// Perform the move
-	while ((remainingTime >= MIN_TICK_TIME) && (Iterations < CtxAccess(MaxSimulationIterations)) && CtxAccess(CharacterOwner) && (CtxAccess(CharacterOwner)->Controller || Comp->bRunPhysicsWithNoController || HasAnimRootMotion(Comp) || Comp->CurrentRootMotion.HasOverrideVelocity() || (CtxAccess(CharacterOwner_Role) == ROLE_SimulatedProxy)))
+	while ((remainingTime >= MIN_TICK_TIME) && (Iterations < CtxAccess(MaxSimulationIterations)) && CtxAccess(CharacterOwner) && (CtxAccess(CharacterOwner)->Controller || Comp->bRunPhysicsWithNoController || HasAnimRootMotion(Ctx) || Comp->CurrentRootMotion.HasOverrideVelocity() || (CtxAccess(CharacterOwner_Role) == ROLE_SimulatedProxy)))
 	{
 		Iterations++;
 		Comp->bJustTeleported = false;
@@ -1050,29 +1021,29 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		remainingTime -= timeTick;
 
 		// Save current values
-		UPrimitiveComponent * const OldBase = GetMovementBase(Comp);
+		UPrimitiveComponent * const OldBase = GetMovementBase(Ctx);
 		const FVector PreviousBaseLocation = (OldBase != NULL) ? OldBase->GetComponentLocation() : FVector_ZeroVector;
 		const FVector OldLocation = GetUpdatedComponentLocation(Ctx);
 		const FFindFloorResult OldFloor = CtxAccess(CurrentFloor);
 
-		RestorePreAdditiveRootMotionVelocity(Comp);
+		RestorePreAdditiveRootMotionVelocity(Ctx);
 
 		// Ensure velocity is horizontal.
-		MaintainHorizontalGroundVelocity(Comp);
+		MaintainHorizontalGroundVelocity(Ctx);
 		const FVector OldVelocity = CtxAccess(Velocity);
 		CtxAccess(Acceleration).z = 0.f;
 
 		// Apply acceleration
-		if (!HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity())
+		if (!HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity())
 		{
-			CalcVelocity(Ctx, timeTick, Comp->GroundFriction, false, GetMaxBrakingDeceleration(Comp));
-			checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("PhysWalking: Velocity contains NaN after CalcVelocity (%s)\n%s"), *GetPathNameSafe(Comp), *CtxAccess(Velocity).ToString()));
+			CalcVelocity(Ctx, timeTick, Comp->GroundFriction, false, GetMaxBrakingDeceleration(Ctx));
+			checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("PhysWalking: Velocity contains NaN after CalcVelocity (%s)\n%s"), *GetPathNameSafe(Ctx), *CtxAccess(Velocity).ToString()));
 		}
 
 		ApplyRootMotionToVelocity(Ctx, timeTick);
-		checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("PhysWalking: Velocity contains NaN after Root Motion application (%s)\n%s"), *GetPathNameSafe(Comp), *CtxAccess(Velocity).ToString()));
+		checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("PhysWalking: Velocity contains NaN after Root Motion application (%s)\n%s"), *GetPathNameSafe(Ctx), *CtxAccess(Velocity).ToString()));
 
-		if (IsFalling(Comp))
+		if (IsFalling(Ctx))
 		{
 			// Root motion could have put us into Falling.
 			// No movement has taken place this movement tick so we pass on full time/past iteration count
@@ -1095,7 +1066,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 			// try to move forward
 			MoveAlongFloor(Ctx, MoveVelocity, timeTick, &StepDownResult);
 
-			if (IsFalling(Comp))
+			if (IsFalling(Ctx))
 			{
 				// pawn decided to jump up
 				const float DesiredDist = Delta.Size();
@@ -1107,7 +1078,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 				StartNewPhysics(Ctx, remainingTime, Iterations);
 				return;
 			}
-			else if (IsSwimming(Comp)) //just entered water
+			else if (IsSwimming(Ctx)) //just entered water
 			{
 				StartSwimming(Ctx, OldLocation, OldVelocity, timeTick, remainingTime, Iterations);
 				return;
@@ -1126,7 +1097,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		}
 
 		// check for ledges here
-		const bool bCheckLedges = !CanWalkOffLedges(Comp);
+		const bool bCheckLedges = !CanWalkOffLedges(Ctx);
 		if (bCheckLedges && !CtxAccess(CurrentFloor).IsWalkableFloor())
 		{
 			// calculate possible alternate movement
@@ -1178,7 +1149,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 					return;
 				}
 
-				AdjustFloorHeight(Comp);
+				AdjustFloorHeight(Ctx);
 				SetBase(Ctx, CtxAccess(CurrentFloor).HitResult.Component.Get(), CtxAccess(CurrentFloor).HitResult.BoneName);
 			}
 			else if (CtxAccess(CurrentFloor).HitResult.bStartPenetrating && remainingTime <= 0.f)
@@ -1193,7 +1164,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 			}
 
 			// check if just entered water
-			if (IsSwimming(Comp))
+			if (IsSwimming(Ctx))
 			{
 				StartSwimming(Ctx, OldLocation, CtxAccess(Velocity), timeTick, remainingTime, Iterations);
 				return;
@@ -1216,7 +1187,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		if (IsMovingOnGround(Ctx))
 		{
 			// Make velocity reflect actual move
-			if (!Comp->bJustTeleported && !HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity() && timeTick >= MIN_TICK_TIME)
+			if (!Comp->bJustTeleported && !HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity() && timeTick >= MIN_TICK_TIME)
 			{
 				// TODO-RootMotionSource: Allow this to happen during partial override Velocity, but only set allowed axes?
 				CtxAccess(Velocity) = (GetUpdatedComponentLocation(Ctx) - OldLocation) / timeTick;
@@ -1233,7 +1204,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 
 	if (IsMovingOnGround(Ctx))
 	{
-		MaintainHorizontalGroundVelocity(Comp);
+		MaintainHorizontalGroundVelocity(Ctx);
 	}
 }
 
@@ -1248,30 +1219,30 @@ void PhysNavWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		return;
 	}
 
-	if ((!CtxAccess(CharacterOwner) || !CtxAccess(CharacterOwner)->Controller) && !Comp->bRunPhysicsWithNoController && !HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity())
+	if ((!CtxAccess(CharacterOwner) || !CtxAccess(CharacterOwner)->Controller) && !Comp->bRunPhysicsWithNoController && !HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity())
 	{
 		CtxAccess(Acceleration) = FVector_ZeroVector;
 		CtxAccess(Velocity) = FVector_ZeroVector;
 		return;
 	}
 
-	RestorePreAdditiveRootMotionVelocity(Comp);
+	RestorePreAdditiveRootMotionVelocity(Ctx);
 
 	// Ensure velocity is horizontal.
-	MaintainHorizontalGroundVelocity(Comp);
-	checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("PhysNavWalking: Velocity contains NaN before CalcVelocity (%s)\n%s"), *GetPathNameSafe(Comp), *CtxAccess(Velocity).ToString()));
+	MaintainHorizontalGroundVelocity(Ctx);
+	checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("PhysNavWalking: Velocity contains NaN before CalcVelocity (%s)\n%s"), *GetPathNameSafe(Ctx), *CtxAccess(Velocity).ToString()));
 
 	//bound acceleration
 	CtxAccess(Acceleration).z = 0.f;
-	if (!HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity())
+	if (!HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity())
 	{
-		CalcVelocity(Ctx, deltaTime, Comp->GroundFriction, false, GetMaxBrakingDeceleration(Comp));
-		checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("PhysNavWalking: Velocity contains NaN after CalcVelocity (%s)\n%s"), *GetPathNameSafe(Comp), *CtxAccess(Velocity).ToString()));
+		CalcVelocity(Ctx, deltaTime, Comp->GroundFriction, false, GetMaxBrakingDeceleration(Ctx));
+		checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("PhysNavWalking: Velocity contains NaN after CalcVelocity (%s)\n%s"), *GetPathNameSafe(Ctx), *CtxAccess(Velocity).ToString()));
 	}
 
 	ApplyRootMotionToVelocity(Ctx, deltaTime);
 
-	if( IsFalling(Comp) )
+	if( IsFalling(Ctx) )
 	{
 		// Root motion could have put us into Falling
 		StartNewPhysics(Ctx, deltaTime, Iterations);
@@ -1283,7 +1254,7 @@ void PhysNavWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 	FVector DesiredMove = CtxAccess(Velocity);
 	DesiredMove.z = 0.f;
 
-	const FVector OldLocation = GetActorFeetLocation(Comp);
+	const FVector OldLocation = GetActorFeetLocation(Ctx);
 	const FVector DeltaMove = DesiredMove * deltaTime;
 
 	FVector AdjustedDest = OldLocation + DeltaMove;
@@ -1360,10 +1331,10 @@ void PhysNavWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		}
 
 		// Update velocity to reflect actual move
-		if (!bJustTeleported && !HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasVelocity())
+		if (!bJustTeleported && !HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasVelocity())
 		{
-			CtxAccess(Velocity) = (GetActorFeetLocation(Comp) - OldLocation) / deltaTime;
-			MaintainHorizontalGroundVelocity(Comp);
+			CtxAccess(Velocity) = (GetActorFeetLocation(Ctx) - OldLocation) / deltaTime;
+			MaintainHorizontalGroundVelocity(Ctx);
 		}
 
 		bJustTeleported = false;
@@ -1414,15 +1385,15 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		const FQuat PawnRotation = CtxAccess(UpdatedComponent_ComponentQuat);
 		Comp->bJustTeleported = false;
 
-		RestorePreAdditiveRootMotionVelocity(Comp);
+		RestorePreAdditiveRootMotionVelocity(Ctx);
 
 		FVector OldVelocity = CtxAccess(Velocity);
 		FVector VelocityNoAirControl = CtxAccess(Velocity);
 
 		// Apply input
-		if (!HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity())
+		if (!HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity())
 		{
-			const float MaxDecel = GetMaxBrakingDeceleration(Comp);
+			const float MaxDecel = GetMaxBrakingDeceleration(Ctx);
 			// Compute VelocityNoAirControl
 			if (bHasAirControl)
 			{
@@ -1451,7 +1422,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		}
 
 		// Apply gravity
-		const FVector Gravity(0.f, 0.f, GetGravityZ(Comp));
+		const FVector Gravity(0.f, 0.f, GetGravityZ(Ctx));
 		CtxAccess(Velocity) = NewFallVelocity(Ctx, CtxAccess(Velocity), Gravity, timeTick);
 		VelocityNoAirControl = NewFallVelocity(Ctx, VelocityNoAirControl, Gravity, timeTick);
 		const FVector AirControlAccel = (CtxAccess(Velocity) - VelocityNoAirControl) / timeTick;
@@ -1462,7 +1433,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		{
 			// Just passed jump apex since now going down
 			Comp->bNotifyApex = false;
-			NotifyJumpApex(Comp);
+			NotifyJumpApex(Ctx);
 		}
 
 
@@ -1480,7 +1451,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		float LastMoveTimeSlice = timeTick;
 		float subTimeTickRemaining = timeTick * (1.f - Hit.Time);
 		
-		if ( IsSwimming(Comp) ) //just entered water
+		if ( IsSwimming(Ctx) ) //just entered water
 		{
 			remainingTime += subTimeTickRemaining;
 			StartSwimming(Ctx, OldLocation, OldVelocity, timeTick, remainingTime, Iterations);
@@ -1517,7 +1488,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 				HandleImpact(Ctx, Hit, LastMoveTimeSlice, Adjusted);
 				
 				// If we've changed physics mode, abort.
-				if (!HasValidData(Ctx) || !IsFalling(Comp))
+				if (!HasValidData(Ctx) || !IsFalling(Ctx))
 				{
 					return;
 				}
@@ -1539,7 +1510,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 				if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !Comp->bJustTeleported)
 				{
 					const FVector NewVelocity = (Delta / subTimeTickRemaining);
-					CtxAccess(Velocity) = HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity() ? FVector(CtxAccess(Velocity).x, CtxAccess(Velocity).y, NewVelocity.Z) : NewVelocity;
+					CtxAccess(Velocity) = HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity() ? FVector(CtxAccess(Velocity).x, CtxAccess(Velocity).y, NewVelocity.Z) : NewVelocity;
 				}
 
 				if (subTimeTickRemaining > KINDA_SMALL_NUMBER && (Delta | Adjusted) > 0.f)
@@ -1563,7 +1534,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 						HandleImpact(Ctx, Hit, LastMoveTimeSlice, Delta);
 
 						// If we've changed physics mode, abort.
-						if (!HasValidData(Ctx) || !IsFalling(Comp))
+						if (!HasValidData(Ctx) || !IsFalling(Ctx))
 						{
 							return;
 						}
@@ -1595,7 +1566,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 						if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !Comp->bJustTeleported)
 						{
 							const FVector NewVelocity = (Delta / subTimeTickRemaining);
-							CtxAccess(Velocity) = HasAnimRootMotion(Comp) && !Comp->CurrentRootMotion.HasOverrideVelocity() ? FVector(CtxAccess(Velocity).x, CtxAccess(Velocity).y, NewVelocity.Z) : NewVelocity;
+							CtxAccess(Velocity) = HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity() ? FVector(CtxAccess(Velocity).x, CtxAccess(Velocity).y, NewVelocity.Z) : NewVelocity;
 						}
 
 						// bDitch=true means that pawn is straddling two slopes, neither of which he can stand on
@@ -1618,7 +1589,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 							ProcessLanded(Ctx, Hit, remainingTime, Iterations);
 							return;
 						}
-						else if (GetPerchRadiusThreshold(Comp) > 0.f && Hit.Time == 1.f && OldHitImpactNormal.z >= Comp->GetWalkableFloorZ())
+						else if (GetPerchRadiusThreshold(Ctx) > 0.f && Hit.Time == 1.f && OldHitImpactNormal.z >= Comp->GetWalkableFloorZ())
 						{
 							// We might be in a virtual 'ditch' within our perch radius. This is rare.
 							const FVector PawnLocation = GetUpdatedComponentLocation(Ctx);
@@ -1626,8 +1597,8 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 							const float MovedDist2DSq = (PawnLocation - OldLocation).SizeSquared2D();
 							if (ZMovedDist <= 0.2f * timeTick && MovedDist2DSq <= 4.f * timeTick)
 							{
-								CtxAccess(Velocity).x += 0.25f * GetMaxSpeed(Comp) * (FMath::FRand() - 0.5f);
-								CtxAccess(Velocity).y += 0.25f * GetMaxSpeed(Comp) * (FMath::FRand() - 0.5f);
+								CtxAccess(Velocity).x += 0.25f * GetMaxSpeed(Ctx) * (FMath::FRand() - 0.5f);
+								CtxAccess(Velocity).y += 0.25f * GetMaxSpeed(Ctx) * (FMath::FRand() - 0.5f);
 								CtxAccess(Velocity).z = FMath::Max<float>(Comp->JumpZVelocity * 0.25f, 1.f);
 								Delta = CtxAccess(Velocity) * timeTick;
 								SafeMoveUpdatedComponent(Ctx, bMoveIgnoreFirstBlockingOverlap, Delta, PawnRotation, true, Hit);
@@ -1720,7 +1691,7 @@ void SetGroundMovementMode(FISPCMovementContext Ctx, EMovementMode NewGroundMove
 void SetDefaultMovementMode(FISPCMovementContext Ctx)
 {
 	// check for water volume
-	if (CanEverSwim(Comp) && IsInWater(Comp))
+	if (CanEverSwim(Ctx) && IsInWater(Ctx))
 	{
 		SetMovementMode(Ctx, Comp->DefaultWaterMovementMode);
 	}
@@ -1730,7 +1701,7 @@ void SetDefaultMovementMode(FISPCMovementContext Ctx)
 		SetMovementMode(Ctx, Comp->DefaultLandMovementMode);
 
 		// Avoid 1-frame delay if trying to walk but walking fails at this location.
-		if (CtxAccess(MovementMode) == MOVE_Walking && GetMovementBase(Comp) == NULL)
+		if (CtxAccess(MovementMode) == MOVE_Walking && GetMovementBase(Ctx) == NULL)
 		{
 			CtxAccess(Velocity).z = SavedVelocityZ; // Prevent temporary walking state from zeroing Z velocity.
 			SetMovementMode(Ctx, MOVE_Falling);
@@ -1787,7 +1758,7 @@ void OnMovementModeChanged(FISPCMovementContext Ctx, EMovementMode PreviousMovem
 
 		// make sure we update our new floor/base on initial entry of the walking physics
 		FindFloor(Ctx, GetUpdatedComponentLocation(Ctx), CtxAccess(CurrentFloor), false);
-		AdjustFloorHeight(Comp);
+		AdjustFloorHeight(Ctx);
 		SetBaseFromFloor(Ctx, CtxAccess(CurrentFloor));
 	}
 	else
@@ -1797,7 +1768,7 @@ void OnMovementModeChanged(FISPCMovementContext Ctx, EMovementMode PreviousMovem
 
 		if (CtxAccess(MovementMode) == MOVE_Falling)
 		{
-			CtxAccess(Velocity) += GetImpartedMovementBaseVelocity(Comp);
+			CtxAccess(Velocity) += GetImpartedMovementBaseVelocity(Ctx);
 			// TODO ISPC: foreach_active?
 			CtxAccess(CharacterOwner)->Falling();
 		}
@@ -1807,9 +1778,9 @@ void OnMovementModeChanged(FISPCMovementContext Ctx, EMovementMode PreviousMovem
 		if (CtxAccess(MovementMode) == MOVE_None)
 		{
 			// Kill velocity and clear queued up events
-			StopMovementKeepPathing(Comp);
+			StopMovementKeepPathing(Ctx);
 			ClearJumpInput(CtxAccess(CharacterOwner));
-			ClearAccumulatedForces(Comp);
+			ClearAccumulatedForces(Ctx);
 		}
 	}
 
@@ -1892,7 +1863,7 @@ bool CheckFall(FISPCMovementContext Ctx, const FFindFloorResult& OldFloor, const
 		return false;
 	}
 
-	if (bMustJump || CanWalkOffLedges(Comp))
+	if (bMustJump || CanWalkOffLedges(Ctx))
 	{
 		CtxAccess(CharacterOwner)->OnWalkingOffLedge(OldFloor.HitResult.ImpactNormal, OldFloor.HitResult.Normal, OldLocation, timeTick);
 		if (IsMovingOnGround(Ctx))
@@ -1942,7 +1913,7 @@ void FindFloor(FISPCMovementContext Ctx, const FVector& CapsuleLocation, FFindFl
 	SCOPE_CYCLE_COUNTER(STAT_CharFindFloor);
 
 	// No collision, no floor...
-	if (!HasValidData(Ctx) || !Comp->UpdatedComponent->IsQueryCollisionEnabled())
+	if (!HasValidData(Ctx) || !CtxAccess(UpdatedComponent)->IsQueryCollisionEnabled())
 	{
 		OutFloorResult.Clear();
 		return;
@@ -1969,7 +1940,7 @@ void FindFloor(FISPCMovementContext Ctx, const FVector& CapsuleLocation, FFindFl
 		else
 		{
 			// Force floor check if base has collision disabled or if it does not block us.
-			UPrimitiveComponent* MovementBase = CtxAccess(CharacterOwner)->GetMovementBase();
+			UPrimitiveComponent* MovementBase = CtxAccess(CharacterOwner_MovementBase);
 			const AActor* BaseActor = MovementBase ? MovementBase->GetOwner() : NULL;
 			const ECollisionChannel CollisionChannel = CtxAccess(UpdatedComponent_CollisionObjectType);
 
@@ -2010,7 +1981,7 @@ void FindFloor(FISPCMovementContext Ctx, const FVector& CapsuleLocation, FFindFl
 			}
 
 			FFindFloorResult PerchFloorResult;
-			if (ComputePerchResult(Ctx, GetValidPerchRadius(Comp), OutFloorResult.HitResult, MaxPerchFloorDist, PerchFloorResult))
+			if (ComputePerchResult(Ctx, GetValidPerchRadius(Ctx), OutFloorResult.HitResult, MaxPerchFloorDist, PerchFloorResult))
 			{
 				// Don't allow the floor distance adjustment to push us up too high, or we will move beyond the perch distance and fall next time.
 				const float AvgFloorDist = (MIN_FLOOR_DIST + MAX_FLOOR_DIST) * 0.5f;
@@ -2045,16 +2016,16 @@ bool HasValidData(const varying FISPCMovementContext Ctx)
 		// NaN-checking updates
 		if (CtxAccess(Velocity).ContainsNaN())
 		{
-			logOrEnsureNanError(TEXT("UCharacterMovementComponent::HasValidData() detected NaN/INF for (%s) in Velocity:\n%s"), *GetPathNameSafe(Comp), *CtxAccess(Velocity).ToString());
+			logOrEnsureNanError(TEXT("UCharacterMovementComponent::HasValidData() detected NaN/INF for (%s) in Velocity:\n%s"), *GetPathNameSafe(Ctx), *CtxAccess(Velocity).ToString());
 			CtxAccess(Velocity) = FVector_ZeroVector;
 		}
-		if (!Comp->UpdatedComponent->GetComponentTransform().IsValid())
+		if (!CtxAccess(UpdatedComponent)->GetComponentTransform().IsValid())
 		{
-			logOrEnsureNanError(TEXT("UCharacterMovementComponent::HasValidData() detected NaN/INF for (%s) in UpdatedComponent->ComponentTransform:\n%s"), *GetPathNameSafe(Comp), *Comp->UpdatedComponent->GetComponentTransform().ToHumanReadableString());
+			logOrEnsureNanError(TEXT("UCharacterMovementComponent::HasValidData() detected NaN/INF for (%s) in UpdatedComponent->ComponentTransform:\n%s"), *GetPathNameSafe(Ctx), *CtxAccess(UpdatedComponent)->GetComponentTransform().ToHumanReadableString());
 		}
-		if (Comp->UpdatedComponent->GetComponentRotation().ContainsNaN())
+		if (CtxAccess(UpdatedComponent)->GetComponentRotation().ContainsNaN())
 		{
-			logOrEnsureNanError(TEXT("UCharacterMovementComponent::HasValidData() detected NaN/INF for (%s) in UpdatedComponent->GetComponentRotation():\n%s"), *GetPathNameSafe(Comp), *Comp->UpdatedComponent->GetComponentRotation().ToString());
+			logOrEnsureNanError(TEXT("UCharacterMovementComponent::HasValidData() detected NaN/INF for (%s) in UpdatedComponent->GetComponentRotation():\n%s"), *GetPathNameSafe(Ctx), *CtxAccess(UpdatedComponent)->GetComponentRotation().ToString());
 		}
 	}
 #endif
@@ -2247,7 +2218,7 @@ void RevertMove(FISPCMovementContext Ctx, const FVector& OldLocation, UPrimitive
 {
 	//UE_LOG(LogISPCCharacterMovement, Log, TEXT("RevertMove from %f %f %f to %f %f %f"), CharacterOwner->Location.x, CharacterOwner->Location.y, CharacterOwner->Location.Z, OldLocation.x, OldLocation.y, OldLocation.Z);
 	// TODO ISPC: foreach_active?
-	Comp->UpdatedComponent->SetWorldLocation(OldLocation, false);
+	CtxAccess(UpdatedComponent)->SetWorldLocation(OldLocation, false);
 
 	//UE_LOG(LogISPCCharacterMovement, Log, TEXT("Now at %f %f %f"), CharacterOwner->Location.x, CharacterOwner->Location.y, CharacterOwner->Location.Z);
 	Comp->bJustTeleported = false;
@@ -2384,7 +2355,7 @@ void MoveAlongFloor(FISPCMovementContext Ctx, const FVector& InVelocity, float D
 
 		if (Hit.IsValidBlockingHit())
 		{
-			if (CanStepUp(Ctx, Hit) || (CtxAccess(CharacterOwner)->GetMovementBase() != NULL && CtxAccess(CharacterOwner)->GetMovementBase()->GetOwner() == Hit.GetActor()))
+			if (CanStepUp(Ctx, Hit) || (CtxAccess(CharacterOwner_MovementBase) != NULL && CtxAccess(CharacterOwner_MovementBase)->GetOwner() == Hit.GetActor()))
 			{
 				// hit a barrier, try to step up
 				const FVector GravDir(0.f, 0.f, -1.f);
@@ -2468,7 +2439,7 @@ bool ShouldComputePerchResult(FISPCMovementContext Ctx, const FHitResult& InHit,
 	}
 
 	// Don't try to perch if the edge radius is very small.
-	if (GetPerchRadiusThreshold(Comp) <= SWEEP_EDGE_REJECT_DISTANCE)
+	if (GetPerchRadiusThreshold(Ctx) <= SWEEP_EDGE_REJECT_DISTANCE)
 	{
 		return false;
 	}
@@ -2476,7 +2447,7 @@ bool ShouldComputePerchResult(FISPCMovementContext Ctx, const FHitResult& InHit,
 	if (bCheckRadius)
 	{
 		const float DistFromCenterSq = (InHit.ImpactPoint - InHit.Location).SizeSquared2D();
-		const float StandOnEdgeRadius = GetValidPerchRadius(Comp);
+		const float StandOnEdgeRadius = GetValidPerchRadius(Ctx);
 		if (DistFromCenterSq <= FMath::Square(StandOnEdgeRadius))
 		{
 			// Already within perch radius.
@@ -2616,7 +2587,7 @@ bool StepUp(FISPCMovementContext Ctx, const FVector& GravDir, const FVector& Del
 
 	// Scope our movement updates, and do not apply them until all intermediate moves are completed.
 	// TODO ISPC
-	FScopedMovementUpdate ScopedStepUpMovement(Comp->UpdatedComponent, EScopedUpdate::DeferredUpdates);
+	FScopedMovementUpdate ScopedStepUpMovement(CtxAccess(UpdatedComponent), EScopedUpdate::DeferredUpdates);
 
 	// step up - treat as vertical wall
 	FHitResult SweepUpHit(1.f);
@@ -2654,7 +2625,7 @@ bool StepUp(FISPCMovementContext Ctx, const FVector& GravDir, const FVector& Del
 
 		// pawn ran into a wall
 		HandleImpact(Ctx, Hit);
-		if (IsFalling(Comp))
+		if (IsFalling(Ctx))
 		{
 			return true;
 		}
@@ -2663,7 +2634,7 @@ bool StepUp(FISPCMovementContext Ctx, const FVector& GravDir, const FVector& Del
 		const float ForwardHitTime = Hit.Time;
 		const float ForwardSlideAmount = SlideAlongSurface(Ctx, Delta, 1.f - Hit.Time, Hit.Normal, Hit, true);
 		
-		if (IsFalling(Comp))
+		if (IsFalling(Ctx))
 		{
 			ScopedStepUpMovement.RevertMove();
 			return false;
@@ -2776,7 +2747,7 @@ FVector GetImpartedMovementBaseVelocity(FISPCMovementContext Ctx) const
 	FVector Result = FVector_ZeroVector;
 	if (CtxAccess(CharacterOwner))
 	{
-		UPrimitiveComponent* MovementBase = CtxAccess(CharacterOwner)->GetMovementBase();
+		UPrimitiveComponent* MovementBase = CtxAccess(CharacterOwner_MovementBase);
 		if (MovementBaseUtility::IsDynamicBase(MovementBase))
 		{
 			FVector BaseVelocity = MovementBaseUtility::GetMovementBaseVelocity(MovementBase, CtxAccess(CharacterOwner)->GetBasedMovement().BoneName);
@@ -2890,7 +2861,7 @@ void AdjustFloorHeight(FISPCMovementContext Ctx)
 
 UPrimitiveComponent* GetMovementBase(FISPCMovementContext Ctx) const
 {
-	return CtxAccess(CharacterOwner) ? CtxAccess(CharacterOwner)->GetMovementBase() : NULL;
+	return CtxAccess(CharacterOwner) ? CtxAccess(CharacterOwner_MovementBase) : NULL;
 }
 
 void SetBase( FISPCMovementContext Ctx, UPrimitiveComponent* NewBase, FName BoneName, bool bNotifyActor )
@@ -2924,9 +2895,6 @@ void MaybeUpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 	const /*UPrimitiveComponent**/void* MovementBase = CtxAccess(CharacterOwner_MovementBase);
 	if (MovementBaseUtility_UseRelativeLocation(MovementBase))
 	{
-#if 1	// TODO ISPC Actual
-		unimplemented();
-#else
 		const bool bBaseIsSimulatingPhysics = MovementBase->IsSimulatingPhysics();
 		
 		// Temporarily disabling deferred tick on skeletal mesh components that sim physics.
@@ -2937,7 +2905,7 @@ void MaybeUpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 		
 		if (!bBaseIsSimulatingPhysics || !bAllowDefer)
 		{
-			Comp->bDeferUpdateBasedMovement = false;
+			CtxAccess(bDeferUpdateBasedMovement) = false;
 			UpdateBasedMovement(Ctx, DeltaSeconds);
 			// If previously simulated, go back to using normal tick dependencies.
 #if 0	// TODO ISPC
@@ -2951,7 +2919,7 @@ void MaybeUpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 		else
 		{
 			// defer movement base update until after physics
-			Comp->bDeferUpdateBasedMovement = true;
+			CtxAccess(bDeferUpdateBasedMovement) = true;
 			// If previously not simulating, remove tick dependencies and use post physics tick function.
 #if 0	// TODO ISPC
 			if (!PostPhysicsTickFunction.IsTickFunctionEnabled())
@@ -2961,16 +2929,14 @@ void MaybeUpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 			}
 #endif
 		}
-#endif
 	}
 }
 
-#if UNIMPLEMENTED_CODE
 void MaybeSaveBaseLocation(FISPCMovementContext Ctx)
 {
-	if (!Comp->bDeferUpdateBasedMovement)
+	if (!CtxAccess(bDeferUpdateBasedMovement))
 	{
-		SaveBaseLocation(Comp);
+		SaveBaseLocation(Ctx);
 	}
 	else { unimplemented(); }	// TODO ISPC
 }
@@ -2982,9 +2948,12 @@ void SaveBaseLocation(FISPCMovementContext Ctx)
 		return;
 	}
 
-	const UPrimitiveComponent* MovementBase = CtxAccess(CharacterOwner)->GetMovementBase();
-	if (MovementBaseUtility::UseRelativeLocation(MovementBase) && !CtxAccess(CharacterOwner)->IsMatineeControlled())
+	const void* MovementBase = CtxAccess(CharacterOwner_MovementBase);
+	if (MovementBaseUtility_UseRelativeLocation(MovementBase) && !CtxAccess(CharacterOwner_IsMatineeControlled))
 	{
+#if 1	// TODO ISPC
+		unimplemented();
+#else
 		// Read transforms into OldBaseLocation, OldBaseQuat
 		MovementBaseUtility::GetMovementBaseTransform(MovementBase, CtxAccess(CharacterOwner)->GetBasedMovement().BoneName, Comp->OldBaseLocation, Comp->OldBaseQuat);
 
@@ -2996,7 +2965,7 @@ void SaveBaseLocation(FISPCMovementContext Ctx)
 		if (Comp->bIgnoreBaseRotation)
 		{
 			// Absolute rotation
-			CtxAccess(CharacterOwner)->SaveRelativeBasedMovement(RelativeLocation, Comp->UpdatedComponent->GetComponentRotation(), false);
+			CtxAccess(CharacterOwner)->SaveRelativeBasedMovement(RelativeLocation, CtxAccess(UpdatedComponent)->GetComponentRotation(), false);
 		}
 		else
 		{
@@ -3004,9 +2973,9 @@ void SaveBaseLocation(FISPCMovementContext Ctx)
 			const FRotator RelativeRotation = (FQuatRotationMatrix(CtxAccess(UpdatedComponent_ComponentQuat)) * FQuatRotationMatrix(Comp->OldBaseQuat).GetTransposed()).Rotator();
 			CtxAccess(CharacterOwner)->SaveRelativeBasedMovement(RelativeLocation, RelativeRotation, true);
 		}
+#endif
 	}
 }
-#endif
 
 bool CanCrouchInCurrentState(FISPCMovementContext Ctx)
 {
@@ -3106,7 +3075,7 @@ void Crouch(FISPCMovementContext Ctx, bool bClientSimulation)
 	ScaledHalfHeightAdjust = HalfHeightAdjust * OldSize.z;
 
 #if 0	// TODO ISPC
-	AdjustProxyCapsuleSize(Comp);
+	AdjustProxyCapsuleSize(Ctx);
 #endif
 	OnStartCrouch( CtxAccess(CharacterOwner), HalfHeightAdjust, ScaledHalfHeightAdjust );
 
@@ -3262,7 +3231,7 @@ void UnCrouch(FISPCMovementContext Ctx, bool bClientSimulation)
 
 	const float MeshAdjust = ScaledHalfHeightAdjust;
 #if 0	// TODO ISPC
-	AdjustProxyCapsuleSize(Comp);
+	AdjustProxyCapsuleSize(Ctx);
 #endif
 	OnEndCrouch( CtxAccess(CharacterOwner), HalfHeightAdjust, ScaledHalfHeightAdjust );
 
@@ -3282,7 +3251,6 @@ void UnCrouch(FISPCMovementContext Ctx, bool bClientSimulation)
 	}
 }
 
-#if UNIMPLEMENTED_CODE
 // @todo UE4 - handle lift moving up and down through encroachment
 void UpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 {
@@ -3291,8 +3259,8 @@ void UpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 		return;
 	}
 
-	const UPrimitiveComponent* MovementBase = CtxAccess(CharacterOwner)->GetMovementBase();
-	if (!MovementBaseUtility::UseRelativeLocation(MovementBase))
+	const UPrimitiveComponent* MovementBase = CtxAccess(CharacterOwner_MovementBase);
+	if (!MovementBaseUtility_UseRelativeLocation(MovementBase))
 	{
 		return;
 	}
@@ -3330,7 +3298,7 @@ void UpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 		const FQuatRotationTranslationMatrix OldLocalToWorld(Comp->OldBaseQuat, Comp->OldBaseLocation);
 		const FQuatRotationTranslationMatrix NewLocalToWorld(NewBaseQuat, NewBaseLocation);
 
-		if( CtxAccess(CharacterOwner)->IsMatineeControlled() )
+		if( CtxAccess(CharacterOwner_IsMatineeControlled) )
 		{
 			FRotationTranslationMatrix HardRelMatrix(CtxAccess(CharacterOwner)->GetBasedMovement().Rotation, CtxAccess(CharacterOwner)->GetBasedMovement().Location);
 			const FMatrix NewWorldTM = HardRelMatrix * NewLocalToWorld;
@@ -3387,7 +3355,7 @@ void UpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 			{
 				// we're trusting no other obstacle can prevent the move here
 				// TODO ISPC: foreach_active
-				Comp->UpdatedComponent->SetWorldLocationAndRotation(NewWorldPos, FinalQuat, false);
+				CtxAccess(UpdatedComponent)->SetWorldLocationAndRotation(NewWorldPos, FinalQuat, false);
 			}
 			else
 			{
@@ -3434,7 +3402,7 @@ void UpdateBasedRotation(FISPCMovementContext Ctx, FRotator& FinalRotation, cons
 	FinalRotation.Roll = 0.f;
 	if (Controller)
 	{
-		FinalRotation.Roll = Comp->UpdatedComponent->GetComponentRotation().Roll;
+		FinalRotation.Roll = CtxAccess(UpdatedComponent)->GetComponentRotation().Roll;
 		FRotator NewRotation = Controller->GetControlRotation();
 		NewRotation.Roll = ControllerRoll;
 		Controller->SetControlRotation(NewRotation);
@@ -3443,7 +3411,7 @@ void UpdateBasedRotation(FISPCMovementContext Ctx, FRotator& FinalRotation, cons
 
 bool SafeMoveUpdatedComponent(FISPCMovementContext Ctx, const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap, const FVector& Delta, const FQuat& NewRotation, bool bSweep, FHitResult& OutHit, ETeleportType Teleport)
 {
-	if (Comp->UpdatedComponent == NULL)
+	if (CtxAccess(UpdatedComponent) == NULL)
 	{
 		OutHit.Reset(1.f);
 		return false;
@@ -3460,7 +3428,7 @@ bool SafeMoveUpdatedComponent(FISPCMovementContext Ctx, const /*uniform*/ bool b
 	}
 
 	// Handle initial penetrations
-	if (OutFHitResult_bStartPenetrating(Hit) && Comp->UpdatedComponent)
+	if (OutFHitResult_bStartPenetrating(Hit) && CtxAccess(UpdatedComponent))
 	{
 		const FVector RequestedAdjustment = GetPenetrationAdjustment(Ctx, OutHit);
 		if (ResolvePenetration(Ctx, RequestedAdjustment, OutHit, NewRotation))
@@ -3482,7 +3450,7 @@ bool ResolvePenetration(FISPCMovementContext Ctx, const FVector& ProposedAdjustm
 	if (!FVector_IsZero(Adjustment) && Comp->UpdatedPrimitive)
 	{
 		// See if we can fit at the adjusted location without overlapping anything.
-		AActor* ActorOwner = Comp->UpdatedComponent->GetOwner();
+		AActor* ActorOwner = CtxAccess(UpdatedComponent)->GetOwner();
 		if (!ActorOwner)
 		{
 			return Comp->bJustTeleported;
@@ -3490,7 +3458,7 @@ bool ResolvePenetration(FISPCMovementContext Ctx, const FVector& ProposedAdjustm
 
 		UE_LOG(LogISPCCharacterMovement, Verbose, TEXT("ResolvePenetration: %s.%s at location %s inside %s.%s at location %s by %.3f (netmode: %d)"),
 			*ActorOwner->GetName(),
-			*Comp->UpdatedComponent->GetName(),
+			*CtxAccess(UpdatedComponent)->GetName(),
 			*GetUpdatedComponentLocation(Ctx).ToString(),
 			*GetNameSafe(Hit.GetActor()),
 			*GetNameSafe(Hit.GetComponent()),
@@ -3556,7 +3524,7 @@ bool ResolvePenetration(FISPCMovementContext Ctx, const FVector& ProposedAdjustm
 
 bool MoveUpdatedComponent(FISPCMovementContext Ctx, const FVector& Delta, const FQuat& NewRotation, bool bSweep, FHitResult* OutHit, ETeleportType Teleport)
 {
-	if (Comp->UpdatedComponent)
+	if (CtxAccess(UpdatedComponent))
 	{
 		const FVector NewDelta = ConstrainDirectionToPlane(Ctx, Delta);
 		// TODO ISPC: foreach_active
@@ -3598,9 +3566,9 @@ FVector ConstrainNormalToPlane(FISPCMovementContext Ctx, FVector Normal) const
 
 void SnapUpdatedComponentToPlane(FISPCMovementContext Ctx)
 {
-	if (Comp->UpdatedComponent && Comp->bConstrainToPlane)
+	if (CtxAccess(UpdatedComponent) && Comp->bConstrainToPlane)
 	{
-		Comp->UpdatedComponent->SetWorldLocation( ConstrainLocationToPlane(Ctx, GetUpdatedComponentLocation(Ctx)) );
+		CtxAccess(UpdatedComponent)->SetWorldLocation( ConstrainLocationToPlane(Ctx, GetUpdatedComponentLocation(Ctx)) );
 	}
 }
 
@@ -3646,12 +3614,12 @@ void RestorePreAdditiveRootMotionVelocity(FISPCMovementContext Ctx)
 void ApplyRootMotionToVelocity(FISPCMovementContext Ctx, float deltaTime)
 {
 #if 1	// TODO_ISPC
-	check(!HasRootMotionSources(Comp));
+	check(!HasRootMotionSources(Ctx));
 #else
 	SCOPE_CYCLE_COUNTER(STAT_CharacterMovementRootMotionSourceApply);
 
 	// Animation root motion is distinct from root motion sources right now and takes precedence
-	if( HasAnimRootMotion(Comp) && deltaTime > 0.f )
+	if( HasAnimRootMotion(Ctx) && deltaTime > 0.f )
 	{
 		CtxAccess(Velocity) = ConstrainAnimRootMotionVelocity(Ctx, Comp->AnimRootMotionVelocity, CtxAccess(Velocity));
 		return;
@@ -3708,7 +3676,7 @@ void ApplyRootMotionToVelocity(FISPCMovementContext Ctx, float deltaTime)
 		else
 		{
 			// Default bounds - the amount of force gravity is applying this tick
-			LiftoffBound = FMath::Max(GetGravityZ(Comp) * deltaTime, SMALL_NUMBER);
+			LiftoffBound = FMath::Max(GetGravityZ(Ctx) * deltaTime, SMALL_NUMBER);
 		}
 
 		if( AppliedVelocityDelta.z > LiftoffBound )
@@ -3724,7 +3692,7 @@ FVector ConstrainAnimRootMotionVelocity(FISPCMovementContext Ctx, const FVector&
 	FVector Result = RootMotionVelocity;
 
 	// Do not override Velocity.z if in falling physics, we want to keep the effect of gravity.
-	if (IsFalling(Comp))
+	if (IsFalling(Ctx))
 	{
 		Result.z = CurrentVelocity.z;
 	}
@@ -3734,7 +3702,7 @@ FVector ConstrainAnimRootMotionVelocity(FISPCMovementContext Ctx, const FVector&
 
 void ApplyVelocityBraking(FISPCMovementContext Ctx, float DeltaTime, float Friction, float BrakingDeceleration)
 {
-	if (FVector_IsZero(CtxAccess(Velocity)) || !HasValidData(Ctx) || HasAnimRootMotion(Comp) || DeltaTime < MIN_TICK_TIME)
+	if (FVector_IsZero(CtxAccess(Velocity)) || !HasValidData(Ctx) || HasAnimRootMotion(Ctx) || DeltaTime < MIN_TICK_TIME)
 	{
 		return;
 	}
@@ -3783,13 +3751,10 @@ void ApplyVelocityBraking(FISPCMovementContext Ctx, float DeltaTime, float Frict
 		CtxAccess(Velocity) = FVector_ZeroVector;
 	}
 }
-#endif
+
 
 void ApplyAccumulatedForces(FISPCMovementContext Ctx, float DeltaSeconds)
 {
-#if 1	// TODO ISPC Actual
-	unimplemented();
-#else
 	if (CtxAccess(PendingImpulseToApply).z != 0.f || CtxAccess(PendingForceToApply).z != 0.f)
 	{
 		// check to see if applied momentum is enough to overcome gravity
@@ -3799,12 +3764,11 @@ void ApplyAccumulatedForces(FISPCMovementContext Ctx, float DeltaSeconds)
 		}
 	}
 
-	CtxAccess(Velocity) += Comp->PendingImpulseToApply + (Comp->PendingForceToApply * DeltaSeconds);
+	CtxAccess(Velocity) += CtxAccess(PendingImpulseToApply) + (CtxAccess(PendingForceToApply) * DeltaSeconds);
 	
 	// Don't call ClearAccumulatedForces() because it could affect launch velocity
-	Comp->PendingImpulseToApply = FVector_ZeroVector;
-	Comp->PendingForceToApply = FVector_ZeroVector;
-#endif
+	CtxAccess(PendingImpulseToApply) = FVector_ZeroVector;
+	CtxAccess(PendingForceToApply) = FVector_ZeroVector;
 }
 
 void ClearAccumulatedForces(FISPCMovementContext Ctx)
@@ -3834,7 +3798,7 @@ FVector NewFallVelocity(FISPCMovementContext Ctx, const FVector& InitialVelocity
 		Result += Gravity * DeltaTime;
 
 		const FVector GravityDir = Gravity.GetSafeNormal();
-		const float TerminalLimit = FMath::Abs(GetPhysicsVolume(Comp)->TerminalVelocity);
+		const float TerminalLimit = FMath::Abs(GetPhysicsVolume(Ctx)->TerminalVelocity);
 
 		// Don't exceed terminal velocity.
 		if ((Result | GravityDir) > TerminalLimit)
@@ -3870,7 +3834,7 @@ void ProcessLanded(FISPCMovementContext Ctx, const FHitResult& Hit, float remain
 	{
 		CtxAccess(CharacterOwner)->Landed(Hit);
 	}
-	if( IsFalling(Comp) )
+	if( IsFalling(Ctx) )
 	{
 		if (Comp->GetGroundMovementMode() == MOVE_NavWalking)
 		{
@@ -3878,7 +3842,7 @@ void ProcessLanded(FISPCMovementContext Ctx, const FHitResult& Hit, float remain
 			// otherwise movement will be stuck in infinite loop:
 			// navwalking -> (no navmesh) -> falling -> (standing on something) -> navwalking -> ....
 
-			const FVector TestLocation = GetActorFeetLocation(Comp);
+			const FVector TestLocation = GetActorFeetLocation(Ctx);
 			FNavLocation NavLocation;
 
 			const bool bHasNavigationData = FindNavFloor(Ctx, TestLocation, NavLocation);
@@ -3904,13 +3868,13 @@ void SetPostLandedPhysics(FISPCMovementContext Ctx, const FHitResult& Hit)
 {
 	if( CtxAccess(CharacterOwner) )
 	{
-		if (CanEverSwim(Comp) && IsInWater(Comp))
+		if (CanEverSwim(Ctx) && IsInWater(Ctx))
 		{
 			SetMovementMode(Ctx, MOVE_Swimming);
 		}
 		else
 		{
-			const FVector PreImpactAccel = CtxAccess(Acceleration) + (IsFalling(Comp) ? FVector(0.f, 0.f, GetGravityZ(Comp)) : FVector_ZeroVector);
+			const FVector PreImpactAccel = CtxAccess(Acceleration) + (IsFalling(Ctx) ? FVector(0.f, 0.f, GetGravityZ(Ctx)) : FVector_ZeroVector);
 			const FVector PreImpactVelocity = CtxAccess(Velocity);
 
 			if (Comp->DefaultLandMovementMode == MOVE_Walking ||
@@ -3921,7 +3885,7 @@ void SetPostLandedPhysics(FISPCMovementContext Ctx, const FHitResult& Hit)
 			}
 			else
 			{
-				SetDefaultMovementMode(Comp);
+				SetDefaultMovementMode(Ctx);
 			}
 			
 			ApplyImpactPhysicsForces(Ctx, Hit, PreImpactAccel, PreImpactVelocity);
@@ -3952,16 +3916,16 @@ void HandleImpact(FISPCMovementContext Ctx, const FHitResult& Impact, float Time
 
 	if (Comp->bEnablePhysicsInteraction)
 	{
-		const FVector ForceAccel = CtxAccess(Acceleration) + (IsFalling(Comp) ? FVector(0.f, 0.f, GetGravityZ(Comp)) : FVector_ZeroVector);
+		const FVector ForceAccel = CtxAccess(Acceleration) + (IsFalling(Ctx) ? FVector(0.f, 0.f, GetGravityZ(Ctx)) : FVector_ZeroVector);
 		ApplyImpactPhysicsForces(Ctx, Impact, ForceAccel, CtxAccess(Velocity));
 	}
 }
 
 void UpdateComponentVelocity(FISPCMovementContext Ctx)
 {
-	if ( Comp->UpdatedComponent )
+	if ( CtxAccess(UpdatedComponent) )
 	{
-		Comp->UpdatedComponent->ComponentVelocity = CtxAccess(Velocity);
+		CtxAccess(UpdatedComponent)->ComponentVelocity = CtxAccess(Velocity);
 	}
 }
 
@@ -3996,7 +3960,7 @@ void ApplyImpactPhysicsForces(FISPCMovementContext Ctx, const FHitResult& Impact
 				float PushForceModificator = 1.0f;
 
 				const FVector ComponentVelocity = ImpactComponent->GetPhysicsLinearVelocity();
-				const FVector VirtualVelocity = FVector_IsZero(ImpactAcceleration) ? ImpactVelocity : ImpactAcceleration.GetSafeNormal() * GetMaxSpeed(Comp);
+				const FVector VirtualVelocity = FVector_IsZero(ImpactAcceleration) ? ImpactVelocity : ImpactAcceleration.GetSafeNormal() * GetMaxSpeed(Ctx);
 
 				float Dot = 0.0f;
 
@@ -4232,7 +4196,7 @@ FVector ComputeSlideVector(FISPCMovementContext Ctx, const FVector& Delta, const
 	FVector Result = Super_ComputeSlideVector(Ctx, Delta, Time, Normal, Hit);
 
 	// prevent boosting up slopes
-	if (IsFalling(Comp))
+	if (IsFalling(Ctx))
 	{
 		Result = HandleSlopeBoosting(Ctx, Result, Delta, Time, Normal, Hit);
 	}
@@ -4324,7 +4288,7 @@ FString GetMovementName(FISPCMovementContext Ctx) const
 		{
 			return TEXT("Rigid Body");
 		}
-		else if ( CtxAccess(CharacterOwner)->IsMatineeControlled() )
+		else if ( CtxAccess(CharacterOwner_IsMatineeControlled) )
 		{
 			return TEXT("Matinee");
 		}
@@ -4369,14 +4333,14 @@ void NotifyBumpedPawn(FISPCMovementContext Ctx, APawn* BumpedPawn)
 void StopMovementImmediately(FISPCMovementContext Ctx)
 {
 	CtxAccess(Velocity) = FVector_ZeroVector;
-	UpdateComponentVelocity(Comp);
-	StopActiveMovement(Comp);
+	UpdateComponentVelocity(Ctx);
+	StopActiveMovement(Ctx);
 }
 
 void StopMovementKeepPathing(FISPCMovementContext Ctx)
 {
 	Comp->bStopMovementAbortPaths = false;
-	StopMovementImmediately(Comp);
+	StopMovementImmediately(Ctx);
 	Comp->bStopMovementAbortPaths = true;
 }
 
@@ -4458,7 +4422,7 @@ FRotator ComputeOrientToMovementRotation(FISPCMovementContext Ctx, const FRotato
 bool ShouldRemainVertical(FISPCMovementContext Ctx) const
 {
 	// Always remain vertical when walking or falling.
-	return IsMovingOnGround(Ctx) || IsFalling(Comp);
+	return IsMovingOnGround(Ctx) || IsFalling(Ctx);
 }
 
 void PhysicsRotation(FISPCMovementContext Ctx, float DeltaTime)
@@ -4473,7 +4437,7 @@ void PhysicsRotation(FISPCMovementContext Ctx, float DeltaTime)
 		return;
 	}
 
-	FRotator CurrentRotation = Comp->UpdatedComponent->GetComponentRotation(); // Normalized
+	FRotator CurrentRotation = CtxAccess(UpdatedComponent)->GetComponentRotation(); // Normalized
 	CurrentRotation.DiagnosticCheckNaN(TEXT("CharacterMovementComponent::PhysicsRotation(): CurrentRotation"));
 
 	FRotator DeltaRot = GetDeltaRotation(Ctx, DeltaTime);
@@ -4493,7 +4457,7 @@ void PhysicsRotation(FISPCMovementContext Ctx, float DeltaTime)
 		return;
 	}
 
-	if (ShouldRemainVertical(Comp))
+	if (ShouldRemainVertical(Ctx))
 	{
 		DesiredRotation.Pitch = 0.f;
 		DesiredRotation.yaw = FRotator::NormalizeAxis(DesiredRotation.yaw);

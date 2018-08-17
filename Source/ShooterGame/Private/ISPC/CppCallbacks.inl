@@ -145,3 +145,42 @@ DefineCppCallback_2Arg_RetVal(float, MaybeModifyWalkableFloorZ,
 		}
 		return TestWalkableZ;
 	})
+
+DefineCppCallback_4Arg(OnCharacterMovementUpdated,
+	const void*, _CharacterOwner, float, DeltaTime, const FVector, OldLocation, const FVector, OldVelocity,
+	{
+		((ACharacter*)_CharacterOwner)->OnCharacterMovementUpdated.Broadcast(DeltaTime, OldLocation, OldVelocity);
+	})
+
+DefineCppCallback_1Arg(CancelAdaptiveReplication,
+	const void*, _Comp,
+	{
+		const UWorld* MyWorld = AccessComp->GetWorld();
+		if (MyWorld)
+		{
+			UNetDriver* NetDriver = MyWorld->GetNetDriver();
+			if (NetDriver && NetDriver->IsServer())
+			{
+				FNetworkObjectInfo* NetActor = NetDriver->FindOrAddNetworkObjectInfo(AccessComp->CharacterOwner);
+
+				if (NetActor && MyWorld->GetTimeSeconds() <= NetActor->NextUpdateTime && NetDriver->IsNetworkActorUpdateFrequencyThrottled(*NetActor))
+				{
+					if (AccessComp->ShouldCancelAdaptiveReplication())
+					{
+						NetDriver->CancelAdaptiveReplication(*NetActor);
+					}
+				}
+			}
+		}
+	})
+
+DefineCppCallback_1Arg_RetVal(float, GetPhysicsVolume_GetGravityZ,
+	const void*, _MoveComp,
+	{
+		auto* MoveComp = (UCharacterMovementComponent*)_MoveComp;
+		if (MoveComp->UpdatedComponent)
+		{
+			return MoveComp->UpdatedComponent->GetPhysicsVolume()->GetGravityZ();
+		}
+		return MoveComp->GetWorld()->GetDefaultPhysicsVolume()->GetGravityZ();
+	})

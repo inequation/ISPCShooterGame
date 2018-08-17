@@ -52,6 +52,7 @@ inline FVector2D MakeFVector2D(float X, float Y) { FVector2D V = { X, Y }; retur
 inline FVector MakeFVector(float X, float Y, float Z) { FVector V = { X, Y, Z }; return V; }
 inline bool FVector_Equal(FVector A, FVector B) { return A.x == B.x && A.y == B.y && A.z == B.z; }
 inline bool FVector_IsZero(FVector A) { return A.x == 0.f && A.y == 0.f && A.z == 0.f; }
+inline bool FQuat_Equal(FQuat A, FQuat B) { return A.x == B.x && A.y == B.y && A.z == B.z && A.w == B.w; }
 
 inline FHitResult MakeFHitResult()
 {
@@ -128,6 +129,10 @@ void PhysFlying(FISPCMovementContext Ctx, float deltaTime, int32 Iterations);
 void PhysSwimming(FISPCMovementContext Ctx, float deltaTime, int32 Iterations);
 void PhysCustom(FISPCMovementContext Ctx, float deltaTime, int32 Iterations);
 void SetUpdatedComponent(FISPCMovementContext Ctx, const /*USceneComponent**/void* NewUpdatedComponent);
+void CallMovementUpdateDelegate(FISPCMovementContext Ctx, float DeltaTime, const FVector OldLocation, const FVector OldVelocity);
+void MaybeSaveBaseLocation(FISPCMovementContext Ctx);
+void SaveBaseLocation(FISPCMovementContext Ctx);
+void UpdateComponentVelocity(FISPCMovementContext Ctx);
 
 #define TEXT(x)	x
 // FIXME ISPC: Redirect to the actual Unreal log.
@@ -139,4 +144,10 @@ bool IsValid(const /*UObject**/void* Test)
 	{
 		return !IsPendingKill(Test);
 	}
+}
+
+bool MovementBaseUtility_UseRelativeLocation(const void* MovementBase)
+{
+	unimplemented();
+	return false;
 }

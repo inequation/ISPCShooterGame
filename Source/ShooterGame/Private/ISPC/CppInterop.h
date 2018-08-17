@@ -18,6 +18,9 @@
 // The primary type we're working with.
 struct FISPCMovementArrays
 {
+	const bool UNetDriver_IsAdaptiveNetUpdateFrequencyEnabled;
+	const float WorldTimeSeconds;
+
 	// The Unreal objects. Intentionally opaque, only used for calls back into C++.
 	const /*UShooterUnrolledCppMovement**/void* const* Comp;
 	const /*USceneComponent**/void* const* UpdatedComponent;
@@ -48,11 +51,13 @@ struct FISPCMovementArrays
 	const bool* const CurrentRootMotion_HasActiveRootMotionSources;
 	const bool* const RootMotionParams_bHasRootMotion;
 
+	const ENetMode* const NetMode;
 	const bool* const bCrouchMaintainsBaseLocation;
 	const bool* const bWantsToCrouch;
 	const bool* const bWantsToLeaveNavWalking;
 	const bool* const bAllowPhysicsRotationDuringAnimRootMotion;
 	const float* const CrouchedHalfHeight;
+	const float* const GravityScale;
 	const int32* const MaxSimulationIterations;
 	FFindFloorResult* CurrentFloor;
 	
@@ -73,5 +78,9 @@ struct FISPCMovementArrays
 	bool* bMovementInProgress;
 
 	FVector* LastUpdateLocation;
+	FQuat* LastUpdateRotation;
+	FVector* LastUpdateVelocity;
 	FVector* Velocity;
+
+	float* ServerLastTransformUpdateTimeStamp;
 };
