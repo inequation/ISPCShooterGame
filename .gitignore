@@ -79,3 +79,28 @@ DerivedDataCache/*
 # Don't include ShooterGame content, it's large and irrelevant to the code.
 Content/*
 Config/*
+*ShooterGame.png
+
+# Don't include code we have no intention of touching with the ISPC project.
+Source/ShooterGame/**/Bots/BT*.*
+Source/ShooterGame/**/Bots/ShooterAIController.*
+Source/ShooterGame/**/Effects/
+Source/ShooterGame/**/Online/
+Source/ShooterGame/**/Pickups/
+Source/ShooterGame/**/Player/
+Source/ShooterGame/**/ShooterEngine.*
+Source/ShooterGame/**/ShooterGameDelegates.*
+Source/ShooterGame/**/ShooterGameInstance.*
+Source/ShooterGame/**/ShooterGameUserSettings.*
+Source/ShooterGame/**/ShooterGameViewportClient.*
+Source/ShooterGame/**/ShooterLeaderboards.*
+Source/ShooterGame/**/ShooterTeamStart.*
+Source/ShooterGame/**/Sound/
+Source/ShooterGame/**/TakeHitInfo.*
+Source/ShooterGame/**/UI/
+Source/ShooterGame/**/Weapons/
+Source/ShooterGame/Public/Bots/ShooterBot.h
+Source/ShooterGame/Public/ShooterGame.h
+Source/ShooterGame/Public/ShooterTypes.h
+Source/ShooterGame/Resources/
+Source/ShooterGameLoadingScreen/
