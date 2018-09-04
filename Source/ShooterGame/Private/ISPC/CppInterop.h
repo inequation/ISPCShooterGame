@@ -28,6 +28,7 @@ struct FISPCMovementArrays
 	const /*UPrimitiveComponent**/void* const* UpdatedPrimitive;
 	const /*ACharacter**/void* const* CharacterOwner;
 	const /*UPrimitiveComponent**/void* const* CharacterOwner_MovementBase;
+	const /*AActor**/void* const* UpdatedComponent_Owner;
 
 	const
 #ifdef ISPC
@@ -58,7 +59,10 @@ struct FISPCMovementArrays
 	const bool* const bAllowPhysicsRotationDuringAnimRootMotion;
 	const float* const CrouchedHalfHeight;
 	const float* const GravityScale;
+	const float* const BrakingFrictionFactor;
 	const int32* const MaxSimulationIterations;
+	const EMoveComponentFlags* const MoveComponentFlags;
+
 	FFindFloorResult* CurrentFloor;
 	
 	EMovementMode* MovementMode;
@@ -76,6 +80,7 @@ struct FISPCMovementArrays
 	bool* bDeferUpdateMoveComponent;
 	bool* bHasRequestedVelocity;
 	bool* bMovementInProgress;
+	bool* bJustTeleported;
 
 	FVector* LastUpdateLocation;
 	FQuat* LastUpdateRotation;

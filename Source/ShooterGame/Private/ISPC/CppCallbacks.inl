@@ -97,10 +97,10 @@ DefineCppCallback_9Arg_RetVal(bool, SweepSingleByChannel,
 			*((FCollisionResponseParams*)_ResponseParam));
 	})
 
-DefineCppCallback_7Arg(MoveComponent,
+DefineCppCallback_7Arg_RetVal(bool, MoveComponent,
 	const void*, _Comp, const FVector, Delta, const FQuat, NewRotation, bool, bSweep, /*FHitResult**/void*, _Hit, /*EMoveComponentFlags*/uint8, MoveFlags, /*ETeleportType*/uint8, Teleport,
 	{
-		((USceneComponent*)_Comp)->MoveComponent(
+		return ((USceneComponent*)_Comp)->MoveComponent(
 			Delta,
 			NewRotation,
 			bSweep,

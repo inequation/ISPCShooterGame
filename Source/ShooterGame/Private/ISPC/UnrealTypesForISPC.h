@@ -22,6 +22,7 @@ typedef int<2> FWeakObjectPtr;
 typedef float<2> FVector2D;
 typedef float<3> FVector;
 typedef float<4> FQuat;
+typedef int<3> FRotator;
 
 typedef unsigned int8 uint8;
 typedef unsigned int32 uint32;

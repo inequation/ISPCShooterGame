@@ -53,6 +53,25 @@ inline FVector MakeFVector(float X, float Y, float Z) { FVector V = { X, Y, Z };
 inline bool FVector_Equal(FVector A, FVector B) { return A.x == B.x && A.y == B.y && A.z == B.z; }
 inline bool FVector_IsZero(FVector A) { return A.x == 0.f && A.y == 0.f && A.z == 0.f; }
 inline bool FQuat_Equal(FQuat A, FQuat B) { return A.x == B.x && A.y == B.y && A.z == B.z && A.w == B.w; }
+inline bool FMath_Square(float X) { return X * X; }
+inline float FVector_Dot(FVector A, FVector B) { return A.x * B.x + A.y * B.y + A.z * B.z; }
+inline float FVector_SizeSquared(FVector X) { return FVector_Dot(X, X); }
+inline FVector FVector_GetSafeNormal(FVector X, const float Tolerance = SMALL_NUMBER)
+{
+	float SquareSum = FVector_SizeSquared(X);
+
+	// Not sure if it's safe to add tolerance in there. Might introduce too many errors
+	if (SquareSum == 1.f)
+	{
+		return X;
+	}
+	else if (SquareSum < Tolerance)
+	{
+		return FVector_ZeroVector;
+	}
+	const float Scale = rsqrt(SquareSum);
+	return MakeFVector(X.x*Scale, X.y*Scale, X.z*Scale);
+}
 
 inline FHitResult MakeFHitResult()
 {
@@ -133,6 +152,9 @@ void CallMovementUpdateDelegate(FISPCMovementContext Ctx, float DeltaTime, const
 void MaybeSaveBaseLocation(FISPCMovementContext Ctx);
 void SaveBaseLocation(FISPCMovementContext Ctx);
 void UpdateComponentVelocity(FISPCMovementContext Ctx);
+FVector ConstrainDirectionToPlane(FISPCMovementContext Ctx, FVector Direction);
+FVector ConstrainLocationToPlane(FISPCMovementContext Ctx, FVector Location);
+FVector ConstrainNormalToPlane(FISPCMovementContext Ctx, FVector Normal);
 
 #define TEXT(x)	x
 // FIXME ISPC: Redirect to the actual Unreal log.

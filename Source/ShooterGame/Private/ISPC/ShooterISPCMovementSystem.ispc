@@ -664,7 +664,7 @@ bool IsCrouching(FISPCMovementContext Ctx)
 }
 
 #if UNIMPLEMENTED_CODE
-APhysicsVolume* GetPhysicsVolume(FISPCMovementContext Ctx) const
+APhysicsVolume* GetPhysicsVolume(FISPCMovementContext Ctx)
 {
 	if (CtxAccess(UpdatedComponent))
 	{
@@ -701,7 +701,7 @@ FVector GetPawnCapsuleExtent(FISPCMovementContext Ctx, const FVector2D CustomShr
 
 #if UNIMPLEMENTED_CODE
 
-float GetMaxSpeed(FISPCMovementContext Ctx) const
+float GetMaxSpeed(FISPCMovementContext Ctx)
 {
 	switch(CtxAccess(MovementMode))
 	{
@@ -722,7 +722,7 @@ float GetMaxSpeed(FISPCMovementContext Ctx) const
 	}
 }
 
-float GetMaxBrakingDeceleration(FISPCMovementContext Ctx) const
+float GetMaxBrakingDeceleration(FISPCMovementContext Ctx)
 {
 	switch (CtxAccess(MovementMode))
 	{
@@ -743,7 +743,7 @@ float GetMaxBrakingDeceleration(FISPCMovementContext Ctx) const
 	}
 }
 
-float GetMinAnalogSpeed(FISPCMovementContext Ctx) const
+float GetMinAnalogSpeed(FISPCMovementContext Ctx)
 {
 	switch (CtxAccess(MovementMode))
 	{
@@ -756,18 +756,18 @@ float GetMinAnalogSpeed(FISPCMovementContext Ctx) const
 	}
 }
 
-float GetMaxAcceleration(FISPCMovementContext Ctx) const
+float GetMaxAcceleration(FISPCMovementContext Ctx)
 {
 	return Comp->MaxAcceleration;
 }
 
-float GetPerchRadiusThreshold(FISPCMovementContext Ctx) const
+float GetPerchRadiusThreshold(FISPCMovementContext Ctx)
 {
 	// Don't allow negative values.
-	return FMath::Max(0.f, Comp->PerchRadiusThreshold);
+	return max(0.f, Comp->PerchRadiusThreshold);
 }
 
-float GetValidPerchRadius(FISPCMovementContext Ctx) const
+float GetValidPerchRadius(FISPCMovementContext Ctx)
 {
 	if (CtxAccess(CharacterOwner))
 	{
@@ -777,13 +777,13 @@ float GetValidPerchRadius(FISPCMovementContext Ctx) const
 	return 0.f;
 }
 
-bool IsInWater(FISPCMovementContext Ctx) const
+bool IsInWater(FISPCMovementContext Ctx)
 {
 	const APhysicsVolume* PhysVolume = GetPhysicsVolume(Ctx);
 	return PhysVolume && PhysVolume->bWaterVolume;
 }
 
-bool IsValidLandingSpot(FISPCMovementContext Ctx, const FVector& CapsuleLocation, const FHitResult& Hit) const
+bool IsValidLandingSpot(FISPCMovementContext Ctx, const FVector& CapsuleLocation, const FHitResult& Hit)
 {
 	if (!Hit.bBlockingHit)
 	{
@@ -836,7 +836,7 @@ bool IsValidLandingSpot(FISPCMovementContext Ctx, const FVector& CapsuleLocation
 	return true;
 }
 
-bool ShouldCheckForValidLandingSpot(FISPCMovementContext Ctx, float DeltaTime, const FVector& Delta, const FHitResult& Hit) const
+bool ShouldCheckForValidLandingSpot(FISPCMovementContext Ctx, float DeltaTime, const FVector& Delta, const FHitResult& Hit)
 {
 	// See if we hit an edge of a surface on the lower portion of the capsule.
 	// In this case the normal will not equal the impact normal, and a downward sweep may find a walkable surface on top of the edge.
@@ -868,7 +868,7 @@ FVector GetFallingLateralAcceleration(FISPCMovementContext Ctx, float DeltaTime)
 }
 
 static uint32 s_WarningCount = 0;
-float GetSimulationTimeStep(FISPCMovementContext Ctx, float RemainingTime, int32 Iterations) const
+float GetSimulationTimeStep(FISPCMovementContext Ctx, float RemainingTime, int32 Iterations)
 {
 	// TODO ISPC: Move MaxSimulation* to system and/or make uniform.
 	if (RemainingTime > Comp->MaxSimulationTimeStep)
@@ -876,7 +876,7 @@ float GetSimulationTimeStep(FISPCMovementContext Ctx, float RemainingTime, int32
 		if (Iterations < CtxAccess(MaxSimulationIterations))
 		{
 			// Subdivide moves to be no longer than MaxSimulationTimeStep seconds
-			RemainingTime = FMath::Min(Comp->MaxSimulationTimeStep, RemainingTime * 0.5f);
+			RemainingTime = min(Comp->MaxSimulationTimeStep, RemainingTime * 0.5f);
 		}
 		else
 		{
@@ -892,7 +892,7 @@ float GetSimulationTimeStep(FISPCMovementContext Ctx, float RemainingTime, int32
 	}
 
 	// no less than MIN_TICK_TIME (to avoid potential divide-by-zero during simulation).
-	return FMath::Max(MIN_TICK_TIME, RemainingTime);
+	return max(MIN_TICK_TIME, RemainingTime);
 }
 
 void CalcVelocity(FISPCMovementContext Ctx, float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration)
@@ -903,7 +903,7 @@ void CalcVelocity(FISPCMovementContext Ctx, float DeltaTime, float Friction, boo
 		return;
 	}
 
-	Friction = FMath::Max(0.f, Friction);
+	Friction = max(0.f, Friction);
 	const float MaxAccel = GetMaxAcceleration(Ctx);
 	float MaxSpeed = GetMaxSpeed(Ctx);
 	
@@ -935,7 +935,7 @@ void CalcVelocity(FISPCMovementContext Ctx, float DeltaTime, float Friction, boo
 
 	// Path following above didn't care about the analog modifier, but we do for everything else below, so get the fully modified value.
 	// Use max of requested speed and max speed if we modified the speed in ApplyRequestedMove above.
-	MaxSpeed = FMath::Max3(RequestedSpeed, MaxSpeed * Comp->AnalogInputModifier, GetMinAnalogSpeed(Ctx));
+	MaxSpeed = max3(RequestedSpeed, MaxSpeed * Comp->AnalogInputModifier, GetMinAnalogSpeed(Ctx));
 
 	// Apply braking or deceleration
 	const bool bZeroAcceleration = FVector_IsZero(CtxAccess(Acceleration));
@@ -950,7 +950,7 @@ void CalcVelocity(FISPCMovementContext Ctx, float DeltaTime, float Friction, boo
 		ApplyVelocityBraking(Ctx, DeltaTime, ActualBrakingFriction, BrakingDeceleration);
 	
 		// Don't allow braking to lower us below max speed if we started above it.
-		if (bVelocityOverMax && CtxAccess(Velocity).SizeSquared() < FMath::Square(MaxSpeed) && FVector::DotProduct(CtxAccess(Acceleration), OldVelocity) > 0.0f)
+		if (bVelocityOverMax && CtxAccess(Velocity).SizeSquared() < FMath_Square(MaxSpeed) && FVector::DotProduct(CtxAccess(Acceleration), OldVelocity) > 0.0f)
 		{
 			CtxAccess(Velocity) = OldVelocity.GetSafeNormal() * MaxSpeed;
 		}
@@ -960,13 +960,13 @@ void CalcVelocity(FISPCMovementContext Ctx, float DeltaTime, float Friction, boo
 		// Friction affects our ability to change direction. This is only done for input acceleration, not path following.
 		const FVector AccelDir = CtxAccess(Acceleration).GetSafeNormal();
 		const float VelSize = CtxAccess(Velocity).Size();
-		CtxAccess(Velocity) = CtxAccess(Velocity) - (CtxAccess(Velocity) - AccelDir * VelSize) * FMath::Min(DeltaTime * Friction, 1.f);
+		CtxAccess(Velocity) = CtxAccess(Velocity) - (CtxAccess(Velocity) - AccelDir * VelSize) * min(DeltaTime * Friction, 1.f);
 	}
 
 	// Apply fluid friction
 	if (bFluid)
 	{
-		CtxAccess(Velocity) = CtxAccess(Velocity) * (1.f - FMath::Min(Friction * DeltaTime, 1.f));
+		CtxAccess(Velocity) = CtxAccess(Velocity) * (1.f - min(Friction * DeltaTime, 1.f));
 	}
 
 	// Apply acceleration
@@ -1007,7 +1007,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 
 	checkCode(ensureMsgf(!CtxAccess(Velocity).ContainsNaN(), TEXT("PhysWalking: Velocity contains NaN before Iteration (%s)\n%s"), *GetPathNameSafe(Ctx), *CtxAccess(Velocity).ToString()));
 
-	Comp->bJustTeleported = false;
+	CtxAccess(bJustTeleported) = false;
 	bool bCheckedFall = false;
 	bool bTriedLedgeMove = false;
 	float remainingTime = deltaTime;
@@ -1016,7 +1016,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 	while ((remainingTime >= MIN_TICK_TIME) && (Iterations < CtxAccess(MaxSimulationIterations)) && CtxAccess(CharacterOwner) && (CtxAccess(CharacterOwner)->Controller || Comp->bRunPhysicsWithNoController || HasAnimRootMotion(Ctx) || Comp->CurrentRootMotion.HasOverrideVelocity() || (CtxAccess(CharacterOwner_Role) == ROLE_SimulatedProxy)))
 	{
 		Iterations++;
-		Comp->bJustTeleported = false;
+		CtxAccess(bJustTeleported) = false;
 		const float timeTick = GetSimulationTimeStep(Ctx, remainingTime, Iterations);
 		remainingTime -= timeTick;
 
@@ -1073,7 +1073,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 				if (DesiredDist > KINDA_SMALL_NUMBER)
 				{
 					const float ActualDist = (GetUpdatedComponentLocation(Ctx) - OldLocation).Size2D();
-					remainingTime += timeTick * (1.f - FMath::Min(1.f, ActualDist / DesiredDist));
+					remainingTime += timeTick * (1.f - min(1.f, ActualDist / DesiredDist));
 				}
 				StartNewPhysics(Ctx, remainingTime, Iterations);
 				return;
@@ -1173,7 +1173,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 			// See if we need to start falling.
 			if (!CtxAccess(CurrentFloor).IsWalkableFloor() && !CtxAccess(CurrentFloor).HitResult.bStartPenetrating)
 			{
-				const bool bMustJump = Comp->bJustTeleported || bZeroDelta || (OldBase == NULL || (!OldBase->IsQueryCollisionEnabled() && MovementBaseUtility::IsDynamicBase(OldBase)));
+				const bool bMustJump = CtxAccess(bJustTeleported) || bZeroDelta || (OldBase == NULL || (!OldBase->IsQueryCollisionEnabled() && MovementBaseUtility::IsDynamicBase(OldBase)));
 				if ((bMustJump || !bCheckedFall) && CheckFall(Ctx, OldFloor, CtxAccess(CurrentFloor).HitResult, Delta, OldLocation, remainingTime, timeTick, Iterations, bMustJump))
 				{
 					return;
@@ -1187,7 +1187,7 @@ void PhysWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		if (IsMovingOnGround(Ctx))
 		{
 			// Make velocity reflect actual move
-			if (!Comp->bJustTeleported && !HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity() && timeTick >= MIN_TICK_TIME)
+			if (!CtxAccess(bJustTeleported) && !HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity() && timeTick >= MIN_TICK_TIME)
 			{
 				// TODO-RootMotionSource: Allow this to happen during partial override Velocity, but only set allowed axes?
 				CtxAccess(Velocity) = (GetUpdatedComponentLocation(Ctx) - OldLocation) / timeTick;
@@ -1270,7 +1270,7 @@ void PhysNavWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 
 			const float TotalCapsuleHeight = CtxAccess(CharacterOwner_CapsuleComponent_Size).y * CtxAccess(CharacterOwner_CapsuleComponent_Size).z * 2.0f;
 			const float ProjectionScale = (OldLocation.z > Comp->CachedNavLocation.Location.Z) ? Comp->NavMeshProjectionHeightScaleUp : Comp->NavMeshProjectionHeightScaleDown;
-			const float DistZThr = TotalCapsuleHeight * FMath::Max(0.f, ProjectionScale);
+			const float DistZThr = TotalCapsuleHeight * max(0.f, ProjectionScale);
 
 			bSameNavLocation = (DistSq2D <= KINDA_SMALL_NUMBER) && (DistZ < DistZThr);
 		}
@@ -1316,8 +1316,8 @@ void PhysNavWalking(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		{
 			SCOPE_CYCLE_COUNTER(STAT_CharNavProjectLocation);
 			const float TotalCapsuleHeight = CtxAccess(CharacterOwner_CapsuleComponent_Size).y * CtxAccess(CharacterOwner_CapsuleComponent_Size).z * 2.0f;
-			const float UpOffset = TotalCapsuleHeight * FMath::Max(0.f, Comp->NavMeshProjectionHeightScaleUp);
-			const float DownOffset = TotalCapsuleHeight * FMath::Max(0.f, Comp->NavMeshProjectionHeightScaleDown);
+			const float UpOffset = TotalCapsuleHeight * max(0.f, Comp->NavMeshProjectionHeightScaleUp);
+			const float DownOffset = TotalCapsuleHeight * max(0.f, Comp->NavMeshProjectionHeightScaleDown);
 			NewLocation = ProjectLocationFromNavMesh(Comp-> deltaTime, OldLocation, NewLocation, UpOffset, DownOffset);
 		}
 
@@ -1383,7 +1383,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 		
 		const FVector OldLocation = GetUpdatedComponentLocation(Ctx);
 		const FQuat PawnRotation = CtxAccess(UpdatedComponent_ComponentQuat);
-		Comp->bJustTeleported = false;
+		CtxAccess(bJustTeleported) = false;
 
 		RestorePreAdditiveRootMotionVelocity(Ctx);
 
@@ -1507,7 +1507,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 				FVector Delta = ComputeSlideVector(Ctx, Adjusted, 1.f - Hit.Time, OldHitNormal, Hit);
 
 				// Compute velocity after deflection (only gravity component for RootMotion)
-				if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !Comp->bJustTeleported)
+				if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !CtxAccess(bJustTeleported))
 				{
 					const FVector NewVelocity = (Delta / subTimeTickRemaining);
 					CtxAccess(Velocity) = HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity() ? FVector(CtxAccess(Velocity).x, CtxAccess(Velocity).y, NewVelocity.Z) : NewVelocity;
@@ -1563,7 +1563,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 						}
 
 						// Compute velocity after deflection (only gravity component for RootMotion)
-						if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !Comp->bJustTeleported)
+						if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !CtxAccess(bJustTeleported))
 						{
 							const FVector NewVelocity = (Delta / subTimeTickRemaining);
 							CtxAccess(Velocity) = HasAnimRootMotion(Ctx) && !Comp->CurrentRootMotion.HasOverrideVelocity() ? FVector(CtxAccess(Velocity).x, CtxAccess(Velocity).y, NewVelocity.Z) : NewVelocity;
@@ -1599,7 +1599,7 @@ void PhysFalling(FISPCMovementContext Ctx, float deltaTime, int32 Iterations)
 							{
 								CtxAccess(Velocity).x += 0.25f * GetMaxSpeed(Ctx) * (FMath::FRand() - 0.5f);
 								CtxAccess(Velocity).y += 0.25f * GetMaxSpeed(Ctx) * (FMath::FRand() - 0.5f);
-								CtxAccess(Velocity).z = FMath::Max<float>(Comp->JumpZVelocity * 0.25f, 1.f);
+								CtxAccess(Velocity).z = max<float>(Comp->JumpZVelocity * 0.25f, 1.f);
 								Delta = CtxAccess(Velocity) * timeTick;
 								SafeMoveUpdatedComponent(Ctx, bMoveIgnoreFirstBlockingOverlap, Delta, PawnRotation, true, Hit);
 							}
@@ -1795,7 +1795,7 @@ void OnMovementModeChanged(FISPCMovementContext Ctx, EMovementMode PreviousMovem
 	ensureMsgf(Comp->GetGroundMovementMode() == MOVE_Walking || Comp->GetGroundMovementMode() == MOVE_NavWalking, TEXT("Invalid GroundMovementMode %d. MovementMode: %d, PreviousMovementMode: %d"), Comp->GetGroundMovementMode(), CtxAccess(MovementMode).GetValue(), PreviousMovementMode);
 };
 
-bool CheckLedgeDirection(FISPCMovementContext Ctx, const FVector& OldLocation, const FVector& SideStep, const FVector& GravDir) const
+bool CheckLedgeDirection(FISPCMovementContext Ctx, const FVector& OldLocation, const FVector& SideStep, const FVector& GravDir)
 {
 	const FVector SideDest = OldLocation + SideStep;
 	FCollisionQueryParams CapsuleParams(SCENE_QUERY_STAT(CheckLedgeDirection), false, CtxAccess(CharacterOwner));
@@ -1821,7 +1821,7 @@ bool CheckLedgeDirection(FISPCMovementContext Ctx, const FVector& OldLocation, c
 	return false;
 }
 
-FVector GetLedgeMove(FISPCMovementContext Ctx, const FVector& OldLocation, const FVector& Delta, const FVector& GravDir) const
+FVector GetLedgeMove(FISPCMovementContext Ctx, const FVector& OldLocation, const FVector& Delta, const FVector& GravDir)
 {
 	if (!HasValidData(Ctx) || FVector_IsZero(Delta))
 	{
@@ -1846,7 +1846,7 @@ FVector GetLedgeMove(FISPCMovementContext Ctx, const FVector& OldLocation, const
 	return FVector_ZeroVector;
 }
 
-bool CanWalkOffLedges(FISPCMovementContext Ctx) const
+bool CanWalkOffLedges(FISPCMovementContext Ctx)
 {
 	if (!Comp->bCanWalkOffLedgesWhenCrouching && IsCrouching(Ctx))
 	{
@@ -1888,7 +1888,7 @@ void StartFalling(FISPCMovementContext Ctx, int32 Iterations, float remainingTim
 	const float ActualDist = (GetUpdatedComponentLocation(Ctx) - subLoc).Size2D();
 	remainingTime = (DesiredDist < KINDA_SMALL_NUMBER) 
 					? 0.f
-					: remainingTime + timeTick * (1.f - FMath::Min(1.f,ActualDist/DesiredDist));
+					: remainingTime + timeTick * (1.f - min(1.f,ActualDist/DesiredDist));
 
 	if (IsMovingOnGround(Ctx) )
 	{
@@ -1908,7 +1908,7 @@ void StartFalling(FISPCMovementContext Ctx, int32 Iterations, float remainingTim
 	StartNewPhysics(Comp,remainingTime,Iterations);
 }
 
-void FindFloor(FISPCMovementContext Ctx, const FVector& CapsuleLocation, FFindFloorResult& OutFloorResult, bool bZeroDelta, const FHitResult* DownwardSweepResult) const
+void FindFloor(FISPCMovementContext Ctx, const FVector& CapsuleLocation, FFindFloorResult& OutFloorResult, bool bZeroDelta, const FHitResult* DownwardSweepResult)
 {
 	SCOPE_CYCLE_COUNTER(STAT_CharFindFloor);
 
@@ -1925,14 +1925,14 @@ void FindFloor(FISPCMovementContext Ctx, const FVector& CapsuleLocation, FFindFl
 	// Increase height check slightly if walking, to prevent floor height adjustment from later invalidating the floor result.
 	const float HeightCheckAdjust = (IsMovingOnGround(Ctx) ? MAX_FLOOR_DIST + KINDA_SMALL_NUMBER : -MAX_FLOOR_DIST);
 
-	float FloorSweepTraceDist = FMath::Max(MAX_FLOOR_DIST, Comp->MaxStepHeight + HeightCheckAdjust);
+	float FloorSweepTraceDist = max(MAX_FLOOR_DIST, Comp->MaxStepHeight + HeightCheckAdjust);
 	float FloorLineTraceDist = FloorSweepTraceDist;
 	bool bNeedToValidateFloor = true;
 
 	// Sweep floor
 	if (FloorLineTraceDist > 0.f || FloorSweepTraceDist > 0.f)
 	{
-		if (Comp->bAlwaysCheckFloor || !bZeroDelta || CtxAccess(bForceNextFloorCheck) || Comp->bJustTeleported)
+		if (Comp->bAlwaysCheckFloor || !bZeroDelta || CtxAccess(bForceNextFloorCheck) || CtxAccess(bJustTeleported))
 		{
 			CtxAccess(bForceNextFloorCheck) = false;
 			ComputeFloorDist(Ctx, CapsuleLocation, FloorLineTraceDist, FloorSweepTraceDist, OutFloorResult, CtxAccess(CharacterOwner)->GetCapsuleComponent()->GetScaledCapsuleRadius(), DownwardSweepResult);
@@ -1974,10 +1974,10 @@ void FindFloor(FISPCMovementContext Ctx, const FVector& CapsuleLocation, FFindFl
 		const bool bCheckRadius = true;
 		if (ShouldComputePerchResult(Ctx, OutFloorResult.HitResult, bCheckRadius))
 		{
-			float MaxPerchFloorDist = FMath::Max(MAX_FLOOR_DIST, Comp->MaxStepHeight + HeightCheckAdjust);
+			float MaxPerchFloorDist = max(MAX_FLOOR_DIST, Comp->MaxStepHeight + HeightCheckAdjust);
 			if (IsMovingOnGround(Ctx))
 			{
-				MaxPerchFloorDist += FMath::Max(0.f, Comp->PerchAdditionalHeight);
+				MaxPerchFloorDist += max(0.f, Comp->PerchAdditionalHeight);
 			}
 
 			FFindFloorResult PerchFloorResult;
@@ -1994,7 +1994,7 @@ void FindFloor(FISPCMovementContext Ctx, const FVector& CapsuleLocation, FFindFl
 				// If the regular capsule is on an unwalkable surface but the perched one would allow us to stand, override the normal to be one that is walkable.
 				if (!OutFloorResult.bWalkableFloor)
 				{
-					OutFloorResult.SetFromLineTrace(PerchFloorResult.HitResult, OutFloorResult.FloorDist, FMath::Min(PerchFloorResult.FloorDist, PerchFloorResult.LineDist), true);
+					OutFloorResult.SetFromLineTrace(PerchFloorResult.HitResult, OutFloorResult.FloorDist, min(PerchFloorResult.FloorDist, PerchFloorResult.LineDist), true);
 				}
 			}
 			else
@@ -2033,7 +2033,7 @@ bool HasValidData(const varying FISPCMovementContext Ctx)
 }
 
 #if UNIMPLEMENTED_CODE
-void ComputeFloorDist(FISPCMovementContext Ctx, const FVector& CapsuleLocation, float LineDistance, float SweepDistance, FFindFloorResult& OutFloorResult, float SweepRadius, const FHitResult* DownwardSweepResult) const
+void ComputeFloorDist(FISPCMovementContext Ctx, const FVector& CapsuleLocation, float LineDistance, float SweepDistance, FFindFloorResult& OutFloorResult, float SweepRadius, const FHitResult* DownwardSweepResult)
 {
 	UE_LOG(LogISPCCharacterMovement, VeryVerbose, TEXT("[Role:%d] ComputeFloorDist: %s at location %s"), (int32)CtxAccess(CharacterOwner_Role), *GetNameSafe(CtxAccess(CharacterOwner)), *CapsuleLocation.ToString());
 	OutFloorResult.Clear();
@@ -2102,12 +2102,12 @@ void ComputeFloorDist(FISPCMovementContext Ctx, const FVector& CapsuleLocation, 
 			{
 				// Use a capsule with a slightly smaller radius and shorter height to avoid the adjacent object.
 				// Capsule must not be nearly zero or the trace will fall back to a line trace from the start point and have the wrong length.
-				CapsuleShape.Capsule.Radius = FMath::Max(0.f, CapsuleShape.Capsule.Radius - SWEEP_EDGE_REJECT_DISTANCE - KINDA_SMALL_NUMBER);
+				CapsuleShape.Capsule.Radius = max(0.f, CapsuleShape.Capsule.Radius - SWEEP_EDGE_REJECT_DISTANCE - KINDA_SMALL_NUMBER);
 				if (!CapsuleShape.IsNearlyZero())
 				{
 					ShrinkHeight = (PawnHalfHeight - PawnRadius) * (1.f - ShrinkScaleOverlap);
 					TraceDist = SweepDistance + ShrinkHeight;
-					CapsuleShape.Capsule.HalfHeight = FMath::Max(PawnHalfHeight - ShrinkHeight, CapsuleShape.Capsule.Radius);
+					CapsuleShape.Capsule.HalfHeight = max(PawnHalfHeight - ShrinkHeight, CapsuleShape.Capsule.Radius);
 					Hit.Reset(1.f, false);
 
 					bBlockingHit = FloorSweepTest(Ctx, Hit, CapsuleLocation, CapsuleLocation + FVector(0.f, 0.f, -TraceDist), CollisionChannel, CapsuleShape, QueryParams, ResponseParam);
@@ -2116,8 +2116,8 @@ void ComputeFloorDist(FISPCMovementContext Ctx, const FVector& CapsuleLocation, 
 
 			// Reduce hit distance by ShrinkHeight because we shrank the capsule for the trace.
 			// We allow negative distances here, because this allows us to pull out of penetrations.
-			const float MaxPenetrationAdjust = FMath::Max(MAX_FLOOR_DIST, PawnRadius);
-			const float SweepResult = FMath::Max(-MaxPenetrationAdjust, Hit.Time * TraceDist - ShrinkHeight);
+			const float MaxPenetrationAdjust = max(MAX_FLOOR_DIST, PawnRadius);
+			const float SweepResult = max(-MaxPenetrationAdjust, Hit.Time * TraceDist - ShrinkHeight);
 
 			OutFloorResult.SetFromSweep(Hit, SweepResult, false);
 			if (Hit.IsValidBlockingHit() && IsWalkable(Hit, Comp->GetWalkableFloorZ()))
@@ -2158,8 +2158,8 @@ void ComputeFloorDist(FISPCMovementContext Ctx, const FVector& CapsuleLocation, 
 			{
 				// Reduce hit distance by ShrinkHeight because we started the trace higher than the base.
 				// We allow negative distances here, because this allows us to pull out of penetrations.
-				const float MaxPenetrationAdjust = FMath::Max(MAX_FLOOR_DIST, PawnRadius);
-				const float LineResult = FMath::Max(-MaxPenetrationAdjust, Hit.Time * TraceDist - ShrinkHeight);
+				const float MaxPenetrationAdjust = max(MAX_FLOOR_DIST, PawnRadius);
+				const float LineResult = max(-MaxPenetrationAdjust, Hit.Time * TraceDist - ShrinkHeight);
 
 				OutFloorResult.bBlockingHit = true;
 				if (LineResult <= LineDistance && IsWalkable(Hit, Comp->GetWalkableFloorZ()))
@@ -2185,7 +2185,7 @@ bool FloorSweepTest(
 	const struct FCollisionShape& CollisionShape,
 	const struct FCollisionQueryParams& Params,
 	const struct FCollisionResponseParams& ResponseParam
-	) const
+	)
 {
 	bool bBlockingHit = false;
 
@@ -2221,7 +2221,7 @@ void RevertMove(FISPCMovementContext Ctx, const FVector& OldLocation, UPrimitive
 	CtxAccess(UpdatedComponent)->SetWorldLocation(OldLocation, false);
 
 	//UE_LOG(LogISPCCharacterMovement, Log, TEXT("Now at %f %f %f"), CharacterOwner->Location.x, CharacterOwner->Location.y, CharacterOwner->Location.Z);
-	Comp->bJustTeleported = false;
+	CtxAccess(bJustTeleported) = false;
 	// if our previous base couldn't have moved or changed in any physics-affecting way, restore it
 	if (IsValid(OldBase) &&
 		(!MovementBaseUtility::IsDynamicBase(OldBase) ||
@@ -2247,7 +2247,7 @@ void RevertMove(FISPCMovementContext Ctx, const FVector& OldLocation, UPrimitive
 	}
 }
 
-FVector ComputeGroundMovementDelta(FISPCMovementContext Ctx, const FVector& Delta, const FHitResult& RampHit, const bool bHitFromLineTrace) const
+FVector ComputeGroundMovementDelta(FISPCMovementContext Ctx, const FVector& Delta, const FHitResult& RampHit, const bool bHitFromLineTrace)
 {
 	const FVector FloorNormal = RampHit.ImpactNormal;
 	const FVector ContactNormal = RampHit.Normal;
@@ -2308,7 +2308,7 @@ void OnCharacterStuckInGeometry(FISPCMovementContext Ctx, const FHitResult* Hit)
 	}
 
 	// Don't update velocity based on our (failed) change in position this update since we're stuck.
-	Comp->bJustTeleported = true;
+	CtxAccess(bJustTeleported) = true;
 }
 
 void MoveAlongFloor(FISPCMovementContext Ctx, const FVector& InVelocity, float DeltaSeconds, UCharacterMovementComponent::FStepDownResult* OutStepDownResult)
@@ -2369,7 +2369,7 @@ void MoveAlongFloor(FISPCMovementContext Ctx, const FVector& InVelocity, float D
 				{
 					// Don't recalculate velocity based on this height adjustment, if considering vertical adjustments.
 					UE_LOG(LogISPCCharacterMovement, Verbose, TEXT("+ StepUp (ImpactNormal %s, Normal %s"), *Hit.ImpactNormal.ToString(), *Hit.Normal.ToString());
-					Comp->bJustTeleported |= !Comp->bMaintainHorizontalGroundVelocity;
+					CtxAccess(bJustTeleported) |= !Comp->bMaintainHorizontalGroundVelocity;
 				}
 			}
 			else if ( Hit.Component.IsValid() && !Hit.Component.Get()->CanCharacterStepUp(CtxAccess(CharacterOwner)) )
@@ -2398,7 +2398,7 @@ void MaintainHorizontalGroundVelocity(FISPCMovementContext Ctx)
 	}
 }
 
-FVector GetPenetrationAdjustment(FISPCMovementContext Ctx, const FHitResult& Hit) const
+FVector GetPenetrationAdjustment(FISPCMovementContext Ctx, const FHitResult& Hit)
 {
 	if (!FHitResult_bStartPenetrating(Hit))
 	{
@@ -2431,7 +2431,7 @@ FVector GetPenetrationAdjustment(FISPCMovementContext Ctx, const FHitResult& Hit
 	return Result;
 }
 
-bool ShouldComputePerchResult(FISPCMovementContext Ctx, const FHitResult& InHit, bool bCheckRadius) const
+bool ShouldComputePerchResult(FISPCMovementContext Ctx, const FHitResult& InHit, bool bCheckRadius)
 {
 	if (!InHit.IsValidBlockingHit())
 	{
@@ -2448,7 +2448,7 @@ bool ShouldComputePerchResult(FISPCMovementContext Ctx, const FHitResult& InHit,
 	{
 		const float DistFromCenterSq = (InHit.ImpactPoint - InHit.Location).SizeSquared2D();
 		const float StandOnEdgeRadius = GetValidPerchRadius(Ctx);
-		if (DistFromCenterSq <= FMath::Square(StandOnEdgeRadius))
+		if (DistFromCenterSq <= FMath_Square(StandOnEdgeRadius))
 		{
 			// Already within perch radius.
 			return false;
@@ -2458,7 +2458,7 @@ bool ShouldComputePerchResult(FISPCMovementContext Ctx, const FHitResult& InHit,
 	return true;
 }
 
-bool ComputePerchResult(FISPCMovementContext Ctx, const float TestRadius, const FHitResult& InHit, const float InMaxFloorDist, FFindFloorResult& OutPerchFloorResult) const
+bool ComputePerchResult(FISPCMovementContext Ctx, const float TestRadius, const FHitResult& InHit, const float InMaxFloorDist, FFindFloorResult& OutPerchFloorResult)
 {
 	if (InMaxFloorDist <= 0.f)
 	{
@@ -2469,9 +2469,9 @@ bool ComputePerchResult(FISPCMovementContext Ctx, const float TestRadius, const 
 	float PawnRadius, PawnHalfHeight;
 	CtxAccess(CharacterOwner)->GetCapsuleComponent()->GetScaledCapsuleSize(PawnRadius, PawnHalfHeight);
 
-	const float InHitAboveBase = FMath::Max(0.f, InHit.ImpactPoint.z - (InHit.Location.z - PawnHalfHeight));
-	const float PerchLineDist = FMath::Max(0.f, InMaxFloorDist - InHitAboveBase);
-	const float PerchSweepDist = FMath::Max(0.f, InMaxFloorDist);
+	const float InHitAboveBase = max(0.f, InHit.ImpactPoint.z - (InHit.Location.z - PawnHalfHeight));
+	const float PerchLineDist = max(0.f, InMaxFloorDist - InHitAboveBase);
+	const float PerchSweepDist = max(0.f, InMaxFloorDist);
 
 	const float ActualSweepDist = PerchSweepDist + PawnRadius;
 	ComputeFloorDist(Ctx, InHit.Location, PerchLineDist, ActualSweepDist, OutPerchFloorResult, TestRadius);
@@ -2490,7 +2490,7 @@ bool ComputePerchResult(FISPCMovementContext Ctx, const float TestRadius, const 
 	return true;
 }
 
-bool CanStepUp(FISPCMovementContext Ctx, const FHitResult& Hit) const
+bool CanStepUp(FISPCMovementContext Ctx, const FHitResult& Hit)
 {
 	if (!Hit.IsValidBlockingHit() || !HasValidData(Ctx) || CtxAccess(MovementMode) == MOVE_Falling)
 	{
@@ -2562,9 +2562,9 @@ bool StepUp(FISPCMovementContext Ctx, const FVector& GravDir, const FVector& Del
 	if (IsMovingOnGround(Ctx) && CtxAccess(CurrentFloor).IsWalkableFloor())
 	{
 		// Since we float a variable amount off the floor, we need to enforce max step height off the actual point of impact with the floor.
-		const float FloorDist = FMath::Max(0.f, CtxAccess(CurrentFloor).GetDistanceToFloor());
+		const float FloorDist = max(0.f, CtxAccess(CurrentFloor).GetDistanceToFloor());
 		PawnInitialFloorBaseZ -= FloorDist;
-		StepTravelUpHeight = FMath::Max(StepTravelUpHeight - FloorDist, 0.f);
+		StepTravelUpHeight = max(StepTravelUpHeight - FloorDist, 0.f);
 		StepTravelDownHeight = (Comp->MaxStepHeight + MAX_FLOOR_DIST*2.f);
 
 		const bool bHitVerticalFace = !IsWithinEdgeTolerance(InHit.Location, InHit.ImpactPoint, PawnRadius);
@@ -2737,12 +2737,12 @@ bool StepUp(FISPCMovementContext Ctx, const FVector& GravDir, const FVector& Del
 	}
 
 	// Don't recalculate velocity based on this height adjustment, if considering vertical adjustments.
-	Comp->bJustTeleported |= !Comp->bMaintainHorizontalGroundVelocity;
+	CtxAccess(bJustTeleported) |= !Comp->bMaintainHorizontalGroundVelocity;
 
 	return true;
 }
 
-FVector GetImpartedMovementBaseVelocity(FISPCMovementContext Ctx) const
+FVector GetImpartedMovementBaseVelocity(FISPCMovementContext Ctx)
 {
 	FVector Result = FVector_ZeroVector;
 	if (CtxAccess(CharacterOwner))
@@ -2852,14 +2852,14 @@ void AdjustFloorHeight(FISPCMovementContext Ctx)
 
 		// Don't recalculate velocity based on this height adjustment, if considering vertical adjustments.
 		// Also avoid it if we moved out of penetration
-		Comp->bJustTeleported |= !Comp->bMaintainHorizontalGroundVelocity || (OldFloorDist < 0.f);
+		CtxAccess(bJustTeleported) |= !Comp->bMaintainHorizontalGroundVelocity || (OldFloorDist < 0.f);
 		
 		// If something caused us to adjust our height (especially a depentration) we should ensure another check next frame or we will keep a stale result.
 		CtxAccess(bForceNextFloorCheck) = true;
 	}
 }
 
-UPrimitiveComponent* GetMovementBase(FISPCMovementContext Ctx) const
+UPrimitiveComponent* GetMovementBase(FISPCMovementContext Ctx)
 {
 	return CtxAccess(CharacterOwner) ? CtxAccess(CharacterOwner_MovementBase) : NULL;
 }
@@ -2890,6 +2890,7 @@ void SetBaseFromFloor(FISPCMovementContext Ctx, const FFindFloorResult& FloorRes
 
 void MaybeUpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 {
+#if UNIMPLEMENTED_CODE
 	CtxAccess(bDeferUpdateBasedMovement) = false;
 
 	const /*UPrimitiveComponent**/void* MovementBase = CtxAccess(CharacterOwner_MovementBase);
@@ -2930,6 +2931,7 @@ void MaybeUpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 #endif
 		}
 	}
+#endif
 }
 
 void MaybeSaveBaseLocation(FISPCMovementContext Ctx)
@@ -3259,6 +3261,7 @@ void UpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 		return;
 	}
 
+#if UNIMPLEMENTED_CODE
 	const UPrimitiveComponent* MovementBase = CtxAccess(CharacterOwner_MovementBase);
 	if (!MovementBaseUtility_UseRelativeLocation(MovementBase))
 	{
@@ -3272,7 +3275,7 @@ void UpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 	}
 
 	// Ignore collision with bases during these movements.
-	TGuardValue<EMoveComponentFlags> ScopedFlagRestore(Comp->MoveComponentFlags, Comp->MoveComponentFlags | MOVECOMP_IgnoreBases);
+	TGuardValue<EMoveComponentFlags> ScopedFlagRestore(CtxAccess(MoveComponentFlags), CtxAccess(MoveComponentFlags) | MOVECOMP_IgnoreBases);
 
 	FQuat DeltaQuat = FQuat_Identity;
 	FVector DeltaPosition = FVector_ZeroVector;
@@ -3385,10 +3388,12 @@ void UpdateBasedMovement(FISPCMovementContext Ctx, float DeltaSeconds)
 			CtxAccess(CharacterOwner)_GetMesh->ApplyDeltaToAllPhysicsTransforms(DeltaPosition, DeltaQuat);
 		}
 	}
+#endif
 }
 
 void UpdateBasedRotation(FISPCMovementContext Ctx, FRotator& FinalRotation, const FRotator& ReducedRotation)
 {
+#if UNIMPLEMENTED_CODE
 	AController* Controller = CtxAccess(CharacterOwner) ? CtxAccess(CharacterOwner)->Controller : NULL;
 	float ControllerRoll = 0.f;
 	if (Controller && !Comp->bIgnoreBaseRotation)
@@ -3407,10 +3412,12 @@ void UpdateBasedRotation(FISPCMovementContext Ctx, FRotator& FinalRotation, cons
 		NewRotation.Roll = ControllerRoll;
 		Controller->SetControlRotation(NewRotation);
 	}
+#endif
 }
 
 bool SafeMoveUpdatedComponent(FISPCMovementContext Ctx, const /*uniform*/ bool bMoveIgnoreFirstBlockingOverlap, const FVector& Delta, const FQuat& NewRotation, bool bSweep, FHitResult& OutHit, ETeleportType Teleport)
 {
+#if UNIMPLEMENTED_CODE
 	if (CtxAccess(UpdatedComponent) == NULL)
 	{
 		OutHit.Reset(1.f);
@@ -3423,7 +3430,7 @@ bool SafeMoveUpdatedComponent(FISPCMovementContext Ctx, const /*uniform*/ bool b
 	{
 		// Conditionally ignore blocking overlaps (based on CVar)
 		const EMoveComponentFlags IncludeBlockingOverlapsWithoutEvents = (MOVECOMP_NeverIgnoreBlockingOverlaps | MOVECOMP_DisableBlockingOverlapDispatch);
-		TGuardValue<EMoveComponentFlags> ScopedFlagRestore(Comp->MoveComponentFlags, bMoveIgnoreFirstBlockingOverlap ? Comp->MoveComponentFlags : (Comp->MoveComponentFlags | IncludeBlockingOverlapsWithoutEvents));
+		TGuardValue<EMoveComponentFlags> ScopedFlagRestore(CtxAccess(MoveComponentFlags), bMoveIgnoreFirstBlockingOverlap ? CtxAccess(MoveComponentFlags) : (CtxAccess(MoveComponentFlags) | IncludeBlockingOverlapsWithoutEvents));
 		bMoveResult = MoveUpdatedComponent(Ctx, Delta, NewRotation, bSweep, &OutHit, Teleport);
 	}
 
@@ -3439,10 +3446,12 @@ bool SafeMoveUpdatedComponent(FISPCMovementContext Ctx, const /*uniform*/ bool b
 	}
 
 	return bMoveResult;
+#endif
 }
 
 bool ResolvePenetration(FISPCMovementContext Ctx, const FVector& ProposedAdjustment, const FHitResult& Hit, const FQuat& NewRotation)
 {
+#if UNIMPLEMENTED_CODE
 	// If movement occurs, mark that we teleported, so we don't incorrectly adjust velocity based on a potentially very different movement than our movement direction.
 
 	// SceneComponent can't be in penetration, so this function really only applies to PrimitiveComponent.
@@ -3450,10 +3459,10 @@ bool ResolvePenetration(FISPCMovementContext Ctx, const FVector& ProposedAdjustm
 	if (!FVector_IsZero(Adjustment) && Comp->UpdatedPrimitive)
 	{
 		// See if we can fit at the adjusted location without overlapping anything.
-		AActor* ActorOwner = CtxAccess(UpdatedComponent)->GetOwner();
+		const void* ActorOwner = CtxAccess(UpdatedComponent_Owner);
 		if (!ActorOwner)
 		{
-			return Comp->bJustTeleported;
+			return CtxAccess(bJustTeleported);
 		}
 
 		UE_LOG(LogISPCCharacterMovement, Verbose, TEXT("ResolvePenetration: %s.%s at location %s inside %s.%s at location %s by %.3f (netmode: %d)"),
@@ -3476,13 +3485,13 @@ bool ResolvePenetration(FISPCMovementContext Ctx, const FVector& ProposedAdjustm
 			// Move without sweeping.
 			MoveUpdatedComponent(Ctx, Adjustment, NewRotation, false, NULL, TeleportPhysics);
 			UE_LOG(LogISPCCharacterMovement, Verbose, TEXT("ResolvePenetration:   teleport by %s"), *Adjustment.ToString());
-			Comp->bJustTeleported = true;
-			return Comp->bJustTeleported;
+			CtxAccess(bJustTeleported) = true;
+			return CtxAccess(bJustTeleported);
 		}
 		else
 		{
 			// Disable MOVECOMP_NeverIgnoreBlockingOverlaps if it is enabled, otherwise we wouldn't be able to sweep out of the object to fix the penetration.
-			TGuardValue<EMoveComponentFlags> ScopedFlagRestore(Comp->MoveComponentFlags, EMoveComponentFlags(Comp->MoveComponentFlags & (~MOVECOMP_NeverIgnoreBlockingOverlaps)));
+			TGuardValue<EMoveComponentFlags> ScopedFlagRestore(CtxAccess(MoveComponentFlags), EMoveComponentFlags(CtxAccess(MoveComponentFlags) & (~MOVECOMP_NeverIgnoreBlockingOverlaps)));
 
 			// Try sweeping as far as possible...
 			FHitResult SweepOutHit(1.f);
@@ -3514,12 +3523,13 @@ bool ResolvePenetration(FISPCMovementContext Ctx, const FVector& ProposedAdjustm
 				}
 			}
 
-			Comp->bJustTeleported |= bMoved;
-			return Comp->bJustTeleported;
+			CtxAccess(bJustTeleported) |= bMoved;
+			return CtxAccess(bJustTeleported);
 		}
 	}
 
-	return Comp->bJustTeleported;
+	return CtxAccess(bJustTeleported);
+#endif
 }
 
 bool MoveUpdatedComponent(FISPCMovementContext Ctx, const FVector& Delta, const FQuat& NewRotation, bool bSweep, FHitResult* OutHit, ETeleportType Teleport)
@@ -3527,72 +3537,84 @@ bool MoveUpdatedComponent(FISPCMovementContext Ctx, const FVector& Delta, const 
 	if (CtxAccess(UpdatedComponent))
 	{
 		const FVector NewDelta = ConstrainDirectionToPlane(Ctx, Delta);
-		// TODO ISPC: foreach_active
-		return MoveComponent(CtxAccess(UpdatedComponent), NewDelta, NewRotation, bSweep, OutHit, Comp->MoveComponentFlags, Teleport);
+		return MoveComponent(CtxAccess(UpdatedComponent), NewDelta, NewRotation, bSweep, OutHit, CtxAccess(MoveComponentFlags), Teleport);
 	}
 
 	return false;
 }
 
-FVector ConstrainDirectionToPlane(FISPCMovementContext Ctx, FVector Direction) const
+FVector ConstrainDirectionToPlane(FISPCMovementContext Ctx, FVector Direction)
 {
-	if (Comp->bConstrainToPlane)
+#if UNIMPLEMENTED_CODE
+	if (CtxAccess(bConstrainToPlane))
 	{
 		Direction = FVector::VectorPlaneProject(Direction, Comp->PlaneConstraintNormal);
 	}
 
 	return Direction;
+#endif
 }
 
-FVector ConstrainLocationToPlane(FISPCMovementContext Ctx, FVector Location) const
+FVector ConstrainLocationToPlane(FISPCMovementContext Ctx, FVector Location)
 {
-	if (Comp->bConstrainToPlane)
+#if UNIMPLEMENTED_CODE
+	if (CtxAccess(bConstrainToPlane))
 	{
 		Location = FVector::PointPlaneProject(Location, Comp->PlaneConstraintOrigin, Comp->PlaneConstraintNormal);
 	}
 
 	return Location;
+#endif
 }
 
-FVector ConstrainNormalToPlane(FISPCMovementContext Ctx, FVector Normal) const
+FVector ConstrainNormalToPlane(FISPCMovementContext Ctx, FVector Normal)
 {
-	if (Comp->bConstrainToPlane)
+#if UNIMPLEMENTED_CODE
+	if (CtxAccess(bConstrainToPlane))
 	{
 		Normal = FVector::VectorPlaneProject(Normal, Comp->PlaneConstraintNormal).GetSafeNormal();
 	}
 
 	return Normal;
+#endif
 }
 
 void SnapUpdatedComponentToPlane(FISPCMovementContext Ctx)
 {
-	if (CtxAccess(UpdatedComponent) && Comp->bConstrainToPlane)
+#if UNIMPLEMENTED_CODE
+	if (CtxAccess(UpdatedComponent) && CtxAccess(bConstrainToPlane))
 	{
 		CtxAccess(UpdatedComponent)->SetWorldLocation( ConstrainLocationToPlane(Ctx, GetUpdatedComponentLocation(Ctx)) );
 	}
+#endif
 }
 
-bool OverlapTest(FISPCMovementContext Ctx, const FVector& Location, const FQuat& RotationQuat, const ECollisionChannel CollisionChannel, const FCollisionShape& CollisionShape, const AActor* IgnoreActor) const
+bool OverlapTest(FISPCMovementContext Ctx, const FVector& Location, const FQuat& RotationQuat, const ECollisionChannel CollisionChannel, const FCollisionShape& CollisionShape, const /*AActor**/void* IgnoreActor)
 {
+#if UNIMPLEMENTED_CODE
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(MovementOverlapTest), false, IgnoreActor);
 	FCollisionResponseParams ResponseParam;
 	// TODO ISPC: Fold these two calls together?
 	InitCollisionParams(Ctx, QueryParams, ResponseParam);
 	return OverlapBlockingTestByChannel(CtxAccess(Comp), Location, RotationQuat, CollisionChannel, CollisionShape, QueryParams, ResponseParam);
+#endif
 }
 
-bool IsExceedingMaxSpeed(FISPCMovementContext Ctx, float MaxSpeed) const
+bool IsExceedingMaxSpeed(FISPCMovementContext Ctx, float MaxSpeed)
 {
-	MaxSpeed = FMath::Max(0.f, MaxSpeed);
-	const float MaxSpeedSquared = FMath::Square(MaxSpeed);
+	MaxSpeed = max(0.f, MaxSpeed);
+	const float MaxSpeedSquared = FMath_Square(MaxSpeed);
 	
 	// Allow 1% error tolerance, to account for numeric imprecision.
 	const float OverVelocityPercent = 1.01f;
-	return (CtxAccess(Velocity).SizeSquared() > MaxSpeedSquared * OverVelocityPercent);
+	return (FVector_SizeSquared(CtxAccess(Velocity)) > MaxSpeedSquared * OverVelocityPercent);
 }
 
 void RestorePreAdditiveRootMotionVelocity(FISPCMovementContext Ctx)
 {
+#if 1	// TODO ISPC
+	check(!HasRootMotionSources(Ctx));
+#else
 	// Restore last frame's pre-additive Velocity if we had additive applied 
 	// so that we're not adding more additive velocity than intended
 	if( Comp->CurrentRootMotion.bIsAdditiveVelocityApplied )
@@ -3609,6 +3631,7 @@ void RestorePreAdditiveRootMotionVelocity(FISPCMovementContext Ctx)
 		CtxAccess(Velocity) = Comp->CurrentRootMotion.LastPreAdditiveVelocity;
 		Comp->CurrentRootMotion.bIsAdditiveVelocityApplied = false;
 	}
+#endif
 }
 
 void ApplyRootMotionToVelocity(FISPCMovementContext Ctx, float deltaTime)
@@ -3676,7 +3699,7 @@ void ApplyRootMotionToVelocity(FISPCMovementContext Ctx, float deltaTime)
 		else
 		{
 			// Default bounds - the amount of force gravity is applying this tick
-			LiftoffBound = FMath::Max(GetGravityZ(Ctx) * deltaTime, SMALL_NUMBER);
+			LiftoffBound = max(GetGravityZ(Ctx) * deltaTime, SMALL_NUMBER);
 		}
 
 		if( AppliedVelocityDelta.z > LiftoffBound )
@@ -3687,7 +3710,7 @@ void ApplyRootMotionToVelocity(FISPCMovementContext Ctx, float deltaTime)
 #endif	// TODO_ISPC
 }
 
-FVector ConstrainAnimRootMotionVelocity(FISPCMovementContext Ctx, const FVector& RootMotionVelocity, const FVector& CurrentVelocity) const
+FVector ConstrainAnimRootMotionVelocity(FISPCMovementContext Ctx, const FVector& RootMotionVelocity, const FVector& CurrentVelocity)
 {
 	FVector Result = RootMotionVelocity;
 
@@ -3707,9 +3730,9 @@ void ApplyVelocityBraking(FISPCMovementContext Ctx, float DeltaTime, float Frict
 		return;
 	}
 
-	const float FrictionFactor = FMath::Max(0.f, Comp->BrakingFrictionFactor);
-	Friction = FMath::Max(0.f, Friction * FrictionFactor);
-	BrakingDeceleration = FMath::Max(0.f, BrakingDeceleration);
+	const float FrictionFactor = max(0.f, CtxAccess(BrakingFrictionFactor));
+	Friction = max(0.f, Friction * FrictionFactor);
+	BrakingDeceleration = max(0.f, BrakingDeceleration);
 	const bool bZeroFriction = (Friction == 0.f);
 	const bool bZeroBraking = (BrakingDeceleration == 0.f);
 
@@ -3726,18 +3749,18 @@ void ApplyVelocityBraking(FISPCMovementContext Ctx, float DeltaTime, float Frict
 	const float MaxTimeStep = (1.0f / 33.0f);
 
 	// Decelerate to brake to a stop
-	const FVector RevAccel = (bZeroBraking ? FVector_ZeroVector : (-BrakingDeceleration * CtxAccess(Velocity).GetSafeNormal()));
+	const FVector RevAccel = (bZeroBraking ? FVector_ZeroVector : (-BrakingDeceleration * FVector_GetSafeNormal(CtxAccess(Velocity))));
 	while( RemainingTime >= MIN_TICK_TIME )
 	{
 		// Zero friction uses constant deceleration, so no need for iteration.
-		const float dt = ((RemainingTime > MaxTimeStep && !bZeroFriction) ? FMath::Min(MaxTimeStep, RemainingTime * 0.5f) : RemainingTime);
+		const float dt = ((RemainingTime > MaxTimeStep && !bZeroFriction) ? min(MaxTimeStep, RemainingTime * 0.5f) : RemainingTime);
 		RemainingTime -= dt;
 
 		// apply friction and braking
 		CtxAccess(Velocity) = CtxAccess(Velocity) + ((-Friction) * CtxAccess(Velocity) + RevAccel) * dt ;
 		
 		// Don't reverse direction
-		if ((CtxAccess(Velocity) | OldVel) <= 0.f)
+		if (FVector_Dot(CtxAccess(Velocity), OldVel) <= 0.f)
 		{
 			CtxAccess(Velocity) = FVector_ZeroVector;
 			return;
@@ -3745,8 +3768,8 @@ void ApplyVelocityBraking(FISPCMovementContext Ctx, float DeltaTime, float Frict
 	}
 
 	// Clamp to zero if nearly zero, or if below min threshold and braking.
-	const float VSizeSq = CtxAccess(Velocity).SizeSquared();
-	if (VSizeSq <= KINDA_SMALL_NUMBER || (!bZeroBraking && VSizeSq <= FMath::Square(BRAKE_TO_STOP_VELOCITY)))
+	const float VSizeSq = FVector_SizeSquared(CtxAccess(Velocity));
+	if (VSizeSq <= KINDA_SMALL_NUMBER || (!bZeroBraking && VSizeSq <= FMath_Square(BRAKE_TO_STOP_VELOCITY)))
 	{
 		CtxAccess(Velocity) = FVector_ZeroVector;
 	}
@@ -3788,7 +3811,7 @@ void NotifyJumpApex(FISPCMovementContext Ctx)
 	}
 }
 
-FVector NewFallVelocity(FISPCMovementContext Ctx, const FVector& InitialVelocity, const FVector& Gravity, float DeltaTime) const
+FVector NewFallVelocity(FISPCMovementContext Ctx, const FVector& InitialVelocity, const FVector& Gravity, float DeltaTime)
 {
 	FVector Result = InitialVelocity;
 
@@ -3797,7 +3820,7 @@ FVector NewFallVelocity(FISPCMovementContext Ctx, const FVector& InitialVelocity
 		// Apply gravity.
 		Result += Gravity * DeltaTime;
 
-		const FVector GravityDir = Gravity.GetSafeNormal();
+		const FVector GravityDir = FVector_GetSafeNormal(Gravity);
 		const float TerminalLimit = FMath::Abs(GetPhysicsVolume(Ctx)->TerminalVelocity);
 
 		// Don't exceed terminal velocity.
@@ -3940,7 +3963,7 @@ void ApplyImpactPhysicsForces(FISPCMovementContext Ctx, const FHitResult& Impact
 			{
 				FVector ForcePoint = Impact.ImpactPoint;
 
-				const float BodyMass = FMath::Max(BI->GetBodyMass(), 1.0f);
+				const float BodyMass = max(BI->GetBodyMass(), 1.0f);
 
 				if(Comp->bPushForceUsingZOffset)
 				{
@@ -3960,7 +3983,7 @@ void ApplyImpactPhysicsForces(FISPCMovementContext Ctx, const FHitResult& Impact
 				float PushForceModificator = 1.0f;
 
 				const FVector ComponentVelocity = ImpactComponent->GetPhysicsLinearVelocity();
-				const FVector VirtualVelocity = FVector_IsZero(ImpactAcceleration) ? ImpactVelocity : ImpactAcceleration.GetSafeNormal() * GetMaxSpeed(Ctx);
+				const FVector VirtualVelocity = FVector_IsZero(ImpactAcceleration) ? ImpactVelocity : FVector_GetSafeNormal(ImpactAcceleration) * GetMaxSpeed(Ctx);
 
 				float Dot = 0.0f;
 
@@ -3996,7 +4019,7 @@ void ApplyImpactPhysicsForces(FISPCMovementContext Ctx, const FHitResult& Impact
 	}
 }
 
-bool FindNavFloor(FISPCMovementContext Ctx, const FVector& TestLocation, FNavLocation& NavFloorLocation) const
+bool FindNavFloor(FISPCMovementContext Ctx, const FVector& TestLocation, FNavLocation& NavFloorLocation)
 {
 #if 1	// TODO ISPC
 	unimplemented();
@@ -4111,7 +4134,7 @@ float SlideAlongSurface(FISPCMovementContext Ctx, const FVector& Delta, float Ti
 	}
 }
 
-void TwoWallAdjust(FISPCMovementContext Ctx, FVector& InOutDelta, const FHitResult& Hit, const FVector& OldHitNormal) const
+void TwoWallAdjust(FISPCMovementContext Ctx, FVector& InOutDelta, const FHitResult& Hit, const FVector& OldHitNormal)
 {
 	const FVector InDelta = InOutDelta;
 	
@@ -4178,9 +4201,9 @@ void TwoWallAdjust(FISPCMovementContext Ctx, FVector& InOutDelta, const FHitResu
 	}
 }
 
-FVector Super_ComputeSlideVector(FISPCMovementContext Ctx, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const
+FVector Super_ComputeSlideVector(FISPCMovementContext Ctx, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit)
 {
-	if (!Comp->bConstrainToPlane)
+	if (!CtxAccess(bConstrainToPlane))
 	{
 		return FVector::VectorPlaneProject(Delta, Normal) * Time;
 	}
@@ -4191,7 +4214,7 @@ FVector Super_ComputeSlideVector(FISPCMovementContext Ctx, const FVector& Delta,
 	}
 }
 
-FVector ComputeSlideVector(FISPCMovementContext Ctx, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const
+FVector ComputeSlideVector(FISPCMovementContext Ctx, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit)
 {
 	FVector Result = Super_ComputeSlideVector(Ctx, Delta, Time, Normal, Hit);
 
@@ -4204,7 +4227,7 @@ FVector ComputeSlideVector(FISPCMovementContext Ctx, const FVector& Delta, const
 	return Result;
 }
 
-FVector HandleSlopeBoosting(FISPCMovementContext Ctx, const FVector& SlideResult, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const
+FVector HandleSlopeBoosting(FISPCMovementContext Ctx, const FVector& SlideResult, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit)
 {
 	FVector Result = SlideResult;
 
@@ -4270,16 +4293,16 @@ FVector GetAirControl(FISPCMovementContext Ctx, float DeltaTime, float TickAirCo
 	{
 		// ISPC: Inlined call to BoostAirControl().
 		// Allow a burst of initial acceleration
-		if (Comp->AirControlBoostMultiplier > 0.f && CtxAccess(Velocity).SizeSquared2D() < FMath::Square(Comp->AirControlBoostVelocityThreshold))
+		if (Comp->AirControlBoostMultiplier > 0.f && CtxAccess(Velocity).SizeSquared2D() < FMath_Square(Comp->AirControlBoostVelocityThreshold))
 		{
-			TickAirControl = FMath::Min(1.f, Comp->AirControlBoostMultiplier * TickAirControl);
+			TickAirControl = min(1.f, Comp->AirControlBoostMultiplier * TickAirControl);
 		}
 	}
 
 	return TickAirControl * FallAcceleration;
 }
 
-FString GetMovementName(FISPCMovementContext Ctx) const
+FString GetMovementName(FISPCMovementContext Ctx)
 {
 	// TODO ISPC: foreach_active?
 	if( CtxAccess(CharacterOwner) )
@@ -4357,7 +4380,7 @@ bool ApplyRequestedMove(FISPCMovementContext Ctx, float DeltaTime, float MaxAcce
 		// Compute requested speed from path following
 		float RequestedSpeed = FMath::Sqrt(RequestedSpeedSquared);
 		const FVector RequestedMoveDir = Comp->RequestedVelocity / RequestedSpeed;
-		RequestedSpeed = (Comp->bRequestedMoveWithMaxSpeed ? MaxSpeed : FMath::Min(MaxSpeed, RequestedSpeed));
+		RequestedSpeed = (Comp->bRequestedMoveWithMaxSpeed ? MaxSpeed : min(MaxSpeed, RequestedSpeed));
 		
 		// Compute actual requested velocity
 		const FVector MoveVelocity = RequestedMoveDir * RequestedSpeed;
@@ -4365,11 +4388,11 @@ bool ApplyRequestedMove(FISPCMovementContext Ctx, float DeltaTime, float MaxAcce
 		// Compute acceleration. Use MaxAccel to limit speed increase, 1% buffer.
 		FVector NewAcceleration = FVector_ZeroVector;
 		const float CurrentSpeedSq = CtxAccess(Velocity).SizeSquared();
-		if (Comp->bRequestedMoveUseAcceleration && CurrentSpeedSq < FMath::Square(RequestedSpeed * 1.01f))
+		if (Comp->bRequestedMoveUseAcceleration && CurrentSpeedSq < FMath_Square(RequestedSpeed * 1.01f))
 		{
 			// Turn in the same manner as with input acceleration.
 			const float VelSize = FMath::Sqrt(CurrentSpeedSq);
-			CtxAccess(Velocity) = CtxAccess(Velocity) - (CtxAccess(Velocity) - RequestedMoveDir * VelSize) * FMath::Min(DeltaTime * Friction, 1.f);
+			CtxAccess(Velocity) = CtxAccess(Velocity) - (CtxAccess(Velocity) - RequestedMoveDir * VelSize) * min(DeltaTime * Friction, 1.f);
 
 			// How much do we need to accelerate to get to the new velocity?
 			NewAcceleration = ((MoveVelocity - CtxAccess(Velocity)) / DeltaTime);
@@ -4396,12 +4419,12 @@ float GetAxisDeltaRotation(float InAxisRotationRate, float DeltaTime)
 	return (InAxisRotationRate >= 0.f) ? (InAxisRotationRate * DeltaTime) : 360.f;
 }
 
-FRotator GetDeltaRotation(FISPCMovementContext Ctx, float DeltaTime) const
+FRotator GetDeltaRotation(FISPCMovementContext Ctx, float DeltaTime)
 {
 	return FRotator(GetAxisDeltaRotation(Comp->RotationRate.Pitch, DeltaTime), GetAxisDeltaRotation(Comp->RotationRate.yaw, DeltaTime), GetAxisDeltaRotation(Comp->RotationRate.Roll, DeltaTime));
 }
 
-FRotator ComputeOrientToMovementRotation(FISPCMovementContext Ctx, const FRotator& CurrentRotation, float DeltaTime, FRotator& DeltaRotation) const
+FRotator ComputeOrientToMovementRotation(FISPCMovementContext Ctx, const FRotator& CurrentRotation, float DeltaTime, FRotator& DeltaRotation)
 {
 	if (CtxAccess(Acceleration).SizeSquared() < KINDA_SMALL_NUMBER)
 	{
@@ -4419,7 +4442,7 @@ FRotator ComputeOrientToMovementRotation(FISPCMovementContext Ctx, const FRotato
 	return CtxAccess(Acceleration).GetSafeNormal().Rotation();
 }
 
-bool ShouldRemainVertical(FISPCMovementContext Ctx) const
+bool ShouldRemainVertical(FISPCMovementContext Ctx)
 {
 	// Always remain vertical when walking or falling.
 	return IsMovingOnGround(Ctx) || IsFalling(Ctx);
